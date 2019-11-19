@@ -1,0 +1,12 @@
+let g:netrw_dirhistmax  =10
+let g:netrw_dirhistcnt =0
+let g:netrw_dirhist_0='/home/soup/projects/work/bifrost/client/lib/common/components/util'
+let g:netrw_dirhist_9='/home/soup/projects/work/bifrost/client/lib/common/components/settings'
+let g:netrw_dirhist_8='/home/soup/projects/work/agnes-emr-proxy/lib/core/api/v1/actions/organization/schedule'
+let g:netrw_dirhist_7='/home/soup/projects/work/agnes-emr-proxy/lib/providers/identity/oidc'
+let g:netrw_dirhist_6='/home/soup/projects/work/electron-client/lib/common/webview'
+let g:netrw_dirhist_5='/home/soup/projects/work/amd-automate/cookbooks/aws-codedeploy-agent'
+let g:netrw_dirhist_4='/home/soup/projects/work/agnes-7/.ebextensions'
+let g:netrw_dirhist_3='/home/soup/projects/work/bifrost/client/lib/portal/components/schedule/list'
+let g:netrw_dirhist_2='/home/soup/projects/work/sandbox/bifrost/client/lib/portal/components'
+let g:netrw_dirhist_1='/home/soup/projects/work/agnes-7/ext/font-manager/src'
