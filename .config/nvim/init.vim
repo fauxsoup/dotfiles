@@ -5,6 +5,10 @@ endif
 let $VIMPATH = fnamemodify(resolve(expand('<sfile>:p')), ':h')
 let $VARPATH = expand(($XDG_CACHE_HOME ? $XDG_CACHE_HOME : '~/.cache').'/vim')
 
+let g:deoplete#enable_at_startup =1
+let g:deoplete#enable_debug = 1
+let g:deoplete#sources#ternjs#tern_bin = '/home/soup/.nvm/versions/node/v12.13.1/bin/tern'
+
 function! s:source_file(path, ...) abort
     let use_global = get(a:000, 0, ! has('vim_starting'))
     let abspath = resolve(expand($VIMPATH.'/config/'.a:path))
@@ -40,8 +44,11 @@ if dein#load_state('~/.cache/dein')
 
     " core
     call dein#add('Shougo/denite.nvim')
+    call dein#add('neoclide/coc.nvim', { 'rev': 'release', 'merged': 0 })
     " call dein#add('Shougo/deoplete.nvim')
-    call dein#add('Valloric/YouCompleteMe')
+    " call dein#add('Valloric/YouCompleteMe')
+    " call dein#add('zxqfl/tabnine-vim')
+    " call dein#add('tbodt/deoplete-tabnine', { 'build': './install.sh' })
     " call dein#add('Shougo/neocomplete')
     call dein#add('Shougo/neosnippet.vim')
     call dein#add('Shougo/neosnippet-snippets')
@@ -110,13 +117,15 @@ if dein#load_state('~/.cache/dein')
     " javascript
     call dein#add('pangloss/vim-javascript')
     " call dein#add('othree/yajs.vim')
-    call dein#add('othree/jspc.vim')
+    " call dein#add('othree/jspc.vim')
     call dein#add('MaxMEllon/vim-jsx-pretty')
     call dein#add('heavenshell/vim-jsdoc')
-    call dein#add('moll/vim-node')
+    " call dein#add('moll/vim-node')
     call dein#add('elzr/vim-json')
+    call dein#add('HerringtonDarkholme/yats.vim')
+    " call dein#add('mhartington/nvim-typescript', { 'build': './install.sh' })
     " call dein#add('carlitux/deoplete-ternjs')
-    " call dein#add('ternjs/tern_for_vim')
+    " call dein#add('ternjs/tern_for_vim', { 'build': 'npm install' })
 
     " c#
     " call dein#add('OmniSharp/omnisharp-vim')
@@ -152,12 +161,16 @@ function! PostSource()
     call s:source_file('es6.vim')
     call s:source_file('cs.vim')
     call s:source_file('markdown.vim')
+    call s:source_file('lightline.vim')
 endfunction
 
 let g:mapleader = "\<Space>"
 let g:maplocalleader = ';'
-let g:deoplete#enable_at_startup = 1
 let g:ycm_global_ycm_extra_conf = '~/.config/nvim/.ycm_extra_conf.py'
+let g:tern#command = ["tern"]
+let g:tern#arguments = ["--persistent"]
+let g:tern_show_argument_hints = 'on_hold'
+let g:tern_show_signature_in_pum = 1
 
 call s:source_file('plugins.vim')
 
