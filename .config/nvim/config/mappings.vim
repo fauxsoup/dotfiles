@@ -159,8 +159,12 @@ nnoremap <silent> [Files]Y :let @+=expand("%:p")<CR>:echo 'Absolute pat copied t
 " Sidebars
 " nnoremap <silent> [Files]a :NERDTreeFind<CR>
 " nnoremap <silent> [Files]e :NERDTreeToggle<CR>
-nnoremap <silent> [Files]a :call DefxOpen({'split': v:true, 'find_current_file': v:true})<CR>
-
+if dein#tap('defx.nvim')
+	nnoremap <silent> [Files]e
+		\ :<C-u>Defx -toggle `getcwd()` -buffer-name=tab`tabpagenr()`<CR>
+	nnoremap <silent> [Files]a
+		\ :<C-u>Defx -search=`expand('%:p')` `fnameescape(expand('%:p:h'))` -buffer-name=tab`tabpagenr()`<CR>
+endif
 " -----------------------------------------------------------------------------
 " FuzzyFinder
 " -----------------------------------------------------------------------------

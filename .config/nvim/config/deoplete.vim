@@ -3,7 +3,7 @@
 
 " General settings " {{{
 " ---
-" let g:deoplete#auto_complete_delay = 50  " Default is 50
+let g:deoplete#auto_complete_delay = 0  " Default is 50
 " let g:deoplete#auto_refresh_delay = 500  " Default is 500
 let g:deoplete#enable_at_startup = 1
 let g:deoplete#enable_refresh_always = 1
@@ -14,14 +14,19 @@ let g:deoplete#skip_chars = ['(', ')', '<', '>']
 let g:deoplete#tag#cache_limit_size = 800000
 let g:deoplete#file#enable_buffer_path = 1
 
-call deoplete#custom#source('_', 'min_pattern_length', 0)
+let g:deoplete#sources#ternjs#types = 1
+let g:deoplete#sources#ternjs#depths = 1
+let g:deoplete#sources#ternjs#docs = 1
+let g:deoplete#sources#ternjs#case_insensitive = 1
+
+call deoplete#custom#source('_', 'min_pattern_length', 1)
 
 " }}}
 " Limit Sources " {{{
 " ---
 
-let g:deoplete#sources = get(g:, 'deoplete#sources', {})
-let g:deoplete#sources.go = ['vim-go']
+" let g:deoplete#sources = get(g:, 'deoplete#sources', {})
+" let g:deoplete#sources.go = ['vim-go']
 " let g:deoplete#sources.javascript = ['ternjs', 'file', 'buffer']
 " let g:deoplete#sources.jsx = ['ternjs', 'file', 'buffer']
 
@@ -67,6 +72,7 @@ let g:deoplete#omni#input_patterns.cs = ''
 " Default rank is 100, higher is better.
 call deoplete#custom#source('omni',          'mark', '⌾')
 call deoplete#custom#source('ternjs',        'mark', '⌁')
+call deoplete#custom#source('typescript',    'mark', '⌁')
 call deoplete#custom#source('vim',           'mark', '⌁')
 call deoplete#custom#source('neosnippet',    'mark', '⌘')
 call deoplete#custom#source('tag',           'mark', '⌦')
@@ -75,8 +81,9 @@ call deoplete#custom#source('buffer',        'mark', 'ℬ')
 call deoplete#custom#source('tmux-complete', 'mark', '⊶')
 call deoplete#custom#source('syntax',        'mark', '♯')
 
+call deoplete#custom#source('ternjs',        'rank', 999)
 call deoplete#custom#source('vim',           'rank', 630)
-call deoplete#custom#source('ternjs',        'rank', 620)
+call deoplete#custom#source('typescript',    'rank', 620)
 call deoplete#custom#source('omni',          'rank', 600)
 call deoplete#custom#source('member',        'rank', 500)
 call deoplete#custom#source('neosnippet',    'rank', 430)
@@ -87,6 +94,7 @@ call deoplete#custom#source('around',        'rank', 330)
 call deoplete#custom#source('buffer',        'rank', 320)
 call deoplete#custom#source('dictionary',    'rank', 310)
 call deoplete#custom#source('tmux-complete', 'rank', 300)
+call deoplete#custom#source('tabnine',       'rank', 200)
 call deoplete#custom#source('syntax',        'rank', 200)
 
 " }}}

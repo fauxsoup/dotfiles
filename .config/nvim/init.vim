@@ -63,6 +63,8 @@ if dein#load_state('~/.cache/dein')
     " call dein#add('scrooloose/nerdtree')
     " call dein#add('Shougo/vimfiler.vim')
     call dein#add('Shougo/defx.nvim')
+    call dein#add('kristijanhusak/defx-git')
+    call dein#add('kristijanhusak/defx-icons')
     call dein#add('chemzqm/vim-easygit')
     call dein#add('majutsushi/tagbar')
     call dein#add('nathanaelkane/vim-indent-guides')
@@ -161,7 +163,6 @@ function! PostSource()
     call s:source_file('es6.vim')
     call s:source_file('cs.vim')
     call s:source_file('markdown.vim')
-    call s:source_file('lightline.vim')
 endfunction
 
 let g:mapleader = "\<Space>"
@@ -175,6 +176,8 @@ let g:tern_show_signature_in_pum = 1
 call s:source_file('plugins.vim')
 
 call s:source_file('general.vim')
+call s:source_file('coc.vim')
+call s:source_file('lightline.vim')
 call s:source_file('filetype.vim')
 call s:source_file('mappings.vim')
 call s:source_file('whitespace.vim')

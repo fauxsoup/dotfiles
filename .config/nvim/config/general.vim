@@ -1,20 +1,5 @@
 autocmd MyAutoCmd CursorHold * if exists(':rshada') | rshada | wshada | endif
 
-" let g:airline_powerline_fonts = 1
-" let g:airline_theme = 'gruvbox'
-
-let g:lightline = {
-        \ 'colorscheme': 'apprentice',
-        \ 'separator': { 'left': '', 'right': '' },
-        \ 'subseparator': { 'left': '', 'right': '' },
-        \ 'active': {
-            \ 'left': [ ['mode', 'paste'], ['gitbranch', 'readonly', 'filename', 'modified']]
-        \ },
-        \ 'component_function': {
-            \ 'gitbranch': 'gitbranch#name'
-        \ }
-    \ }
-
 " General Settings
 "---------------------------------------------------------
 " General {{{

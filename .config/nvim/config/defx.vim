@@ -1,54 +1,235 @@
-autocmd FileType defx call s:defx_my_settings()
-autocmd FileType defx setlocal nobuflisted
+" :h defx
+" ---
+" Problems? https://github.com/Shougo/defx.nvim/issues
 
-function! DefxOpen(...) abort
-  let l:opts = get(a:, 1, {})
-  let l:args = '-winwidth=40 -direction=topleft -columns=project_lint:git:mark:filename:type'
-  let l:is_opened = bufwinnr('defx') > 0
+call defx#custom#option('_', {
+    \ 'resume': 1,
+    \ 'winwidth': 25,
+    \ 'split': 'vertical',
+    \ 'direction': 'topleft',
+    \ 'show_ignored_files': 0,
+    \ 'columns': 'indent:git:icons:filename',
+    \ 'root_marker': ' ',
+    \ 'ignored_files':
+    \     '.mypy_cache,.pytest_cache,.git,.hg,.svn,.stversions'
+    \   . ',__pycache__,.sass-cache,*.egg-info,.DS_Store,*.pyc'
+    \ })
 
-  if has_key(l:opts, 'split')
-    let l:args .= ' -split=vertical'
-  endif
+call defx#custom#column('git', {
+    \   'indicators': {
+    \     'Modified'  : '•',
+    \     'Staged'    : '✚',
+    \     'Untracked' : 'ᵁ',
+    \     'Renamed'   : '≫',
+    \     'Unmerged'  : '≠',
+    \     'Ignored'   : 'ⁱ',
+    \     'Deleted'   : '✖',
+    \     'Unknown'   : '⁇'
+    \   }
+    \ })
 
-  if has_key(l:opts, 'find_current_file')
-    if &filetype ==? 'defx'
-      return
+call defx#custom#column('mark', { 'readonly_icon': '', 'selected_icon': '' })
+
+" defx-icons plugin
+let g:defx_icons_column_length = 2
+let g:defx_icons_mark_icon = ''
+
+" Internal use
+let s:original_width = get(get(defx#custom#_get().option, '_'), 'winwidth')
+
+" Plugin: Defx icons and highlights {{{
+" ---
+highlight! defxSelected             ctermbg=97 guibg=#36202b
+highlight Defx_filename_3_Modified  ctermfg=1  guifg=#D370A3
+highlight Defx_filename_3_Staged    ctermfg=10 guifg=#A3D572
+highlight Defx_filename_3_Ignored   ctermfg=8  guifg=#404660
+highlight link Defx_filename_3_root_marker Comment
+
+highlight def link Defx_filename_3_Untracked Comment
+highlight def link Defx_filename_3_Unknown Comment
+highlight def link Defx_filename_3_Renamed Title
+highlight def link Defx_filename_3_Unmerged Label
+" highlight Defx_git_Deleted   ctermfg=13 guifg=#b294bb
+" }}}
+
+" Events
+" ---
+
+augroup user_plugin_defx
+    autocmd!
+
+    " Define defx window mappings
+    autocmd FileType defx call <SID>defx_mappings()
+
+    " Delete defx if it's the only buffer left in the window
+    autocmd WinEnter * if &filetype == 'defx' && winnr('$') == 1 | bdel | endif
+
+    " Move focus to the next window if current buffer is defx
+    autocmd TabLeave * if &filetype == 'defx' | wincmd w | endif
+
+    " autocmd WinEnter * if &filetype ==# 'defx'
+    "	\ |   silent! highlight! link CursorLine TabLineSel
+    "	\ | endif
+    "
+    " autocmd WinLeave * if &filetype ==# 'defx'
+    "	\ |   silent! highlight! link CursorLine NONE
+    "	\ | endif
+
+augroup END
+
+" Internal functions
+" ---
+
+function! s:jump_dirty(dir) abort
+    " Jump to the next position with defx-git dirty symbols
+    let l:icons = get(g:, 'defx_git_indicators', {})
+    let l:icons_pattern = join(values(l:icons), '\|')
+
+    if ! empty(l:icons_pattern)
+        let l:direction = a:dir > 0 ? 'w' : 'bw'
+        return search(printf('\(%s\)', l:icons_pattern), l:direction)
     endif
-    call execute(printf('Defx %s -search=%s %s', l:args, fnameescape(expand('%:p')), fnameescape(expand('%:p:h'))))
-  else
-    call execute(printf('Defx -toggle %s %s', l:args, get(l:opts, 'dir', getcwd())))
-    if l:is_opened
-      call execute('wincmd p')
+endfunction
+
+function! s:defx_toggle_tree() abort
+    " Open current file, or toggle directory expand/collapse
+    if defx#is_directory()
+        return defx#do_action('open_or_close_tree')
     endif
-  endif
-
-  return execute("norm!\<C-w>=")
+    return defx#do_action('multi', ['drop', 'quit'])
 endfunction
 
-function! DefxContextMenu() abort
-  let l:actions = ['new_file', 'new_directory', 'rename', 'copy', 'move', 'paste', 'remove']
-  let l:selection = confirm('Action?', "&New file\nNew &Folder\n&Rename\n&Copy\n&Move\n&Paste\n&Delete")
-  silent exe 'redraw'
+function! s:defx_mappings() abort
+    " Defx window keyboard mappings
+    setlocal signcolumn=no expandtab
 
-  return feedkeys(defx#do_action(l:actions[l:selection - 1]))
+    nnoremap <silent><buffer><expr> <CR>  <SID>defx_toggle_tree()
+    nnoremap <silent><buffer><expr> e     <SID>defx_toggle_tree()
+    nnoremap <silent><buffer><expr> l     <SID>defx_toggle_tree()
+    nnoremap <silent><buffer><expr> h     defx#do_action('close_tree')
+    nnoremap <silent><buffer><expr> t     defx#do_action('open_tree_recursive')
+    nnoremap <silent><buffer><expr> st    defx#do_action('multi', [['drop', 'tabnew'], 'quit'])
+    nnoremap <silent><buffer><expr> sg    defx#do_action('multi', [['drop', 'vsplit'], 'quit'])
+    nnoremap <silent><buffer><expr> sv    defx#do_action('multi', [['drop', 'split'], 'quit'])
+    nnoremap <silent><buffer><expr> P     defx#do_action('open', 'pedit')
+    nnoremap <silent><buffer><expr> y     defx#do_action('yank_path')
+    nnoremap <silent><buffer><expr> x     defx#do_action('execute_system')
+    nnoremap <silent><buffer><expr> gx    defx#do_action('execute_system')
+    nnoremap <silent><buffer><expr> .     defx#do_action('toggle_ignored_files')
+
+    " Defx's buffer management
+    nnoremap <silent><buffer><expr> q      defx#do_action('quit')
+    nnoremap <silent><buffer><expr> se     defx#do_action('save_session')
+    nnoremap <silent><buffer><expr> <C-r>  defx#do_action('redraw')
+    nnoremap <silent><buffer><expr> <C-g>  defx#do_action('print')
+
+    " File/dir management
+    nnoremap <silent><buffer><expr><nowait> c  defx#do_action('copy')
+    nnoremap <silent><buffer><expr><nowait> m  defx#do_action('move')
+    nnoremap <silent><buffer><expr><nowait> p  defx#do_action('paste')
+    nnoremap <silent><buffer><expr><nowait> r  defx#do_action('rename')
+    nnoremap <silent><buffer><expr> dd defx#do_action('remove')
+    nnoremap <silent><buffer><expr> K  defx#do_action('new_directory')
+    nnoremap <silent><buffer><expr> N  defx#do_action('new_multiple_files')
+
+    " Jump
+    nnoremap <silent><buffer>  [g :<C-u>call <SID>jump_dirty(-1)<CR>
+    nnoremap <silent><buffer>  ]g :<C-u>call <SID>jump_dirty(1)<CR>
+
+    " Change directory
+    nnoremap <silent><buffer><expr><nowait> \  defx#do_action('cd', getcwd())
+    nnoremap <silent><buffer><expr><nowait> &  defx#do_action('cd', getcwd())
+    nnoremap <silent><buffer><expr> <BS>  defx#async_action('cd', ['..'])
+    nnoremap <silent><buffer><expr> ~     defx#async_action('cd')
+    nnoremap <silent><buffer><expr> u   defx#do_action('cd', ['..'])
+    nnoremap <silent><buffer><expr> 2u  defx#do_action('cd', ['../..'])
+    nnoremap <silent><buffer><expr> 3u  defx#do_action('cd', ['../../..'])
+    nnoremap <silent><buffer><expr> 4u  defx#do_action('cd', ['../../../..'])
+
+    " Selection
+    nnoremap <silent><buffer><expr> *  defx#do_action('toggle_select_all')
+    nnoremap <silent><buffer><expr><nowait> <Space>
+        \ defx#do_action('toggle_select') . 'j'
+
+    nnoremap <silent><buffer><expr> S  defx#do_action('toggle_sort', 'Time')
+    nnoremap <silent><buffer><expr> C
+        \ defx#do_action('toggle_columns', 'indent:mark:filename:type:size:time')
+
+    " Tools
+    nnoremap <silent><buffer><expr> w   defx#do_action('call', '<SID>toggle_width')
+    nnoremap <silent><buffer><expr> gd  defx#async_action('multi', ['drop', ['call', '<SID>git_diff']])
+    nnoremap <silent><buffer><expr> gr  defx#do_action('call', '<SID>grep')
+    nnoremap <silent><buffer><expr> gf  defx#do_action('call', '<SID>find_files')
+
+    nnoremap <buffer><silent> <leader>gp <Plug>(defx-git-prev)
+    nnoremap <buffer><silent> <leader>gn <Plug>(defx-git-next)
+    nnoremap <buffer><silent> <leader>ga <Plug>(defx-git-stage)
+    nnoremap <buffer><silent> <leader>gr <Plug>(defx-git-reset)
+    nnoremap <buffer><silent> <leader>gd <Plug>(defx-git-discard)
+
+    if exists('$TMUX')
+        nnoremap <silent><buffer><expr> gl  defx#async_action('call', '<SID>explorer')
+    endif
 endfunction
 
-function! s:defx_my_settings() abort
-    nnoremap <silent><buffer>m :call DefxContextMenu()<CR>
-    nnoremap <silent><buffer><expr> o defx#do_action('drop')
-    nnoremap <silent><buffer><expr> l defx#do_action('drop')
-    nnoremap <silent><buffer><expr> <CR> defx#do_action('drop')
-    nnoremap <silent><buffer><expr> <2-LeftMouse> defx#do_action('drop')
-    nnoremap <silent><buffer><expr> sv defx#do_action('open', 'botright vsplit')
-    nnoremap <silent><buffer><expr> sg defx#do_action('open', 'botright split')
-    nnoremap <silent><buffer><expr> R defx#do_action('redraw')
-    nnoremap <silent><buffer><expr> h defx#do_action('cd', ['..'])
-    nnoremap <silent><buffer><expr> cd defx#do_action('change_vim_cwd')
-    nnoremap <silent><buffer><expr> H defx#do_action('toggle_ignored_files')
-    nnoremap <silent><buffer><expr> <Space> defx#do_action('toggle_select') . 'j'
-    nnoremap <silent><buffer><expr> j line('.') == line('$') ? 'gg' : 'j'
-    nnoremap <silent><buffer><expr> k line('.') == 1 ? 'G' : 'k'
-    nnoremap <silent><buffer><expr> yy defx#do_action('yank_path')
-    nnoremap <silent><buffer><expr> q defx#do_action('quit')
-    nnoremap <silent><buffer><expr> gh defx#do_action('cd', [getcwd()])
+" TOOLS
+" ---
+
+function! s:git_diff(context) abort
+    execute 'GdiffThis'
 endfunction
+
+function! s:find_files(context) abort
+    " Find files in parent directory with Denite
+    let l:target = a:context['targets'][0]
+    let l:parent = fnamemodify(l:target, ':h')
+    silent execute 'wincmd w'
+    silent execute 'Denite file/rec:'.l:parent
+endfunction
+
+function! s:grep(context) abort
+    " Grep in parent directory with Denite
+    let l:target = a:context['targets'][0]
+    let l:parent = fnamemodify(l:target, ':h')
+    silent execute 'wincmd w'
+    silent execute 'Denite grep:'.l:parent
+endfunction
+
+function! s:toggle_width(context) abort
+    " Toggle between defx window width and longest line
+    let l:max = 0
+    for l:line in range(1, line('$'))
+        let l:len = len(getline(l:line))
+        let l:max = max([l:len, l:max])
+    endfor
+    let l:new = l:max == winwidth(0) ? s:original_width : l:max
+    call defx#call_action('resize', l:new)
+endfunction
+
+function! s:explorer(context) abort
+    " Open file-explorer split with tmux
+    let l:explorer = s:find_file_explorer()
+    if empty('$TMUX') || empty(l:explorer)
+        return
+    endif
+    let l:target = a:context['targets'][0]
+    let l:parent = fnamemodify(l:target, ':h')
+    let l:cmd = 'split-window -p 30 -c ' . l:parent . ' ' . l:explorer
+    silent execute '!tmux ' . l:cmd
+endfunction
+
+function! s:find_file_explorer() abort
+    " Detect terminal file-explorer
+    let s:file_explorer = get(g:, 'terminal_file_explorer', '')
+    if empty(s:file_explorer)
+        for l:explorer in ['lf', 'hunter', 'ranger', 'vifm']
+            if executable(l:explorer)
+                let s:file_explorer = l:explorer
+                break
+            endif
+        endfor
+    endif
+    return s:file_explorer
+endfunction
+
+" vim: set ts=8 sw=4 tw=80 et :m
