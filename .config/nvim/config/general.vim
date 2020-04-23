@@ -316,7 +316,9 @@ let g:material_theme_style = 'palenight'
 let g:material_terminal_italics = 1
 let ayucolor="dark"
 let g:one_allow_italics = 1
+let g:javascript_plugin_jsdoc = 1
 syntax enable
-colorscheme apprentice
+let g:material_theme_style = 'ocean'
+colorscheme material
 
 let g:ycm_global_ycm_extra_conf = "~/.config/nvin/config/.ycm_extra_conf.py"

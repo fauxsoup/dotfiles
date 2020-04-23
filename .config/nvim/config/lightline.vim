@@ -1,12 +1,12 @@
 " lightline
 let g:lightline = {
-  \ 'colorscheme': 'wombat',
+  \ 'colorscheme': 'material_vim',
   \ 'separator': { 'left': '', 'right': '' },
   \ 'subseparator': { 'left': '', 'right': '' },
   \ 'active': {
   \   'left': [
   \     [ 'mode', 'paste' ],
-  \     [ 'currentfunction', 'ctrlpmark', 'git', 'diagnostic', 'cocstatus', 'filename', 'method' ]
+  \     [ 'cocstatus', 'currentfunction', 'ctrlpmark', 'git', 'filename', 'method' ]
   \   ],
   \   'right':[
   \     [ 'filetype', 'fileencoding', 'lineinfo', 'percent' ],
@@ -14,9 +14,10 @@ let g:lightline = {
   \   ],
   \ },
   \ 'component_function': {
+  \   'git': 'FugitiveHead',
   \   'blame': 'LightlineGitBlame',
-  \   'cocstatus': 'coc#status',
-  \   'currentfunction': 'CocCurrentFunction'
+  \   'currentfunction': 'CocCurrentFunction',
+  \   'cocstatus': 'coc#status'
   \ }
 \ }
 
@@ -26,6 +27,20 @@ function! LightlineGitBlame() abort
   return winwidth(0) > 120 ? blame : ''
 endfunction
 
+function! StatusDiagnostic() abort
+  let info = get(b:, 'coc_diagnostic_info', {})
+  if empty(info) | return '' | endif
+  let msgs = []
+  if get(info, 'error', 0)
+    call add(msgs, 'E' . info['error'])
+  endif
+  if get(info, 'warning', 0)
+    call add(msgs, 'W' . info['warning'])
+  endif
+  return join(msgs, ' '). ' ' . get(g:, 'coc_status', '')
+endfunction
+
 function! CocCurrentFunction()
-    return get(b:, 'coc_current_function', '')
+    return get(b:, 'coc_current_function')
+    " return CocAction('getCurrentFunctionSymbol')
 endfunction

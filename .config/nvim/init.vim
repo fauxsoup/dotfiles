@@ -65,7 +65,7 @@ if dein#load_state('~/.cache/dein')
     call dein#add('Shougo/defx.nvim')
     call dein#add('kristijanhusak/defx-git')
     call dein#add('kristijanhusak/defx-icons')
-    call dein#add('chemzqm/vim-easygit')
+    call dein#add('tpope/vim-fugitive')
     call dein#add('majutsushi/tagbar')
     call dein#add('nathanaelkane/vim-indent-guides')
     call dein#add('kaicataldo/material.vim')
@@ -121,7 +121,7 @@ if dein#load_state('~/.cache/dein')
     " call dein#add('othree/yajs.vim')
     " call dein#add('othree/jspc.vim')
     call dein#add('MaxMEllon/vim-jsx-pretty')
-    call dein#add('heavenshell/vim-jsdoc')
+    " call dein#add('heavenshell/vim-jsdoc')
     " call dein#add('moll/vim-node')
     call dein#add('elzr/vim-json')
     call dein#add('HerringtonDarkholme/yats.vim')
@@ -197,7 +197,7 @@ endfunction
 
 map <C-F> :call FormatDocument()<cr>
 
-autocmd BufWritePre *.h,*.c,*.cc,*.cpp,*.js call FormatDocument()
+autocmd BufWritePre *.h,*.c,*.cc,*.cpp,*.js,*.ts call FormatDocument()
 
 let g:ale_fixers = {
  \ 'javascript': ['eslint']
