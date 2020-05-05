@@ -1,16 +1,17 @@
 # If you come from bash you might have to change your $PATH.
 # export PATH=$HOME/bin:/usr/local/bin:$PATH
 export PATH="${PATH}:/home/${USER}/.local/bin"
+export TERM="xterm-24bit"
 
 # Path to your oh-my-zsh installation.
-  export ZSH="/home/soup/.oh-my-zsh"
+export ZSH="/home/soup/.oh-my-zsh"
 
 # Set name of the theme to load. Optionally, if you set this to "random"
 # it'll load a random theme each time that oh-my-zsh is loaded.
 # See https://github.com/robbyrussell/oh-my-zsh/wiki/Themes
 ZSH_THEME="agnoster"
-ZSH_TMUX_AUTOSTART="true"
-ZSH_TMUX_AUTOCONNECT="false"
+# ZSH_TMUX_AUTOSTART="true"
+# ZSH_TMUX_AUTOCONNECT="true"
 # ZSH_TMUX_FIXTERM="true"
 
 # Set list of themes to load
@@ -88,7 +89,8 @@ source $ZSH/oh-my-zsh.sh
 # else
 #   export EDITOR='mvim'
 # fi
-export EDITOR="nvim"
+export EDITOR="emacsclient -t"
+export VISUAL="emacsclient -c -a emacs"
 
 # Compilation flags
 # export ARCHFLAGS="-arch x86_64"
