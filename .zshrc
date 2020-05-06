@@ -1,7 +1,7 @@
 # If you come from bash you might have to change your $PATH.
 # export PATH=$HOME/bin:/usr/local/bin:$PATH
-export PATH="${PATH}:/home/${USER}/.local/bin"
-export TERM="xterm-24bit"
+
+# export TERM="xterm-24bit"
 
 # Path to your oh-my-zsh installation.
 export ZSH="/home/soup/.oh-my-zsh"
@@ -108,10 +108,6 @@ export VISUAL="emacsclient -c -a emacs"
 # alias ohmyzsh="mate ~/.oh-my-zsh"
 
 ulimit -n 4096
-
-export NVM_DIR="$HOME/.nvm"
-[ -s "$NVM_DIR/nvm.sh" ] && \. "$NVM_DIR/nvm.sh"  # This loads nvm
-
 
 alias reset="reset && echo -e '\0033\0143'"
 
