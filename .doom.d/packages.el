@@ -49,3 +49,4 @@
 (package! kaolin-themes)
 (package! realgud-node-inspect)
 (package! org-gcal)
+(package! exwm)
