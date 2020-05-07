@@ -29,6 +29,12 @@
 ;; If you use `org' and don't want your org files in the default location below,
 ;; change `org-directory'. It must be set before org loads!
 (setq org-directory "~/org/")
+(setq jiralib-use-restapi t)
+(setq jiralib-url "https://amdglobal.atlassian.net")
+(setq org-jira-working-dir "~/org/jira/")
+(setq org-gcal-client-id "743131239384-juro25oid0vt1re27jmo0j1u189a3d6l.apps.googleusercontent.com"
+      org-gcal-client-secret "bpl0cM8DyeldHjhmu5AGwnO5"
+      org-gcal-file-alist '(("zachary.hueras@gmail.com" . "gmail.org")))
 
 ;; This determines the style of line numbers in effect. If set to `nil', line
 ;; numbers are disabled. For relative line numbers, set this to `relative'.
@@ -52,6 +58,33 @@
 ;; You can also try 'gd' (or 'C-c g d') to jump to their definition and see how
 ;; they are implemented.
 (setq projectile-project-search-path (list "~/projects/work" "~/projects/personal"))
+(setq vterm-max-scrollback 9999)
+;;(setq request-log-level 'debug)
+;;(setq request-message-level 'debug)
+(require 'org-jira)
+(jiralib-login "zhueras@amdtelemedicine.com" "ZVUhQQExEoyNfuYgIBItE060")
+
+;; (define-key evil-normal-state-map ";" nil)
+;; (define-key org-jira-map (kbd ";pg") 'org-jira-get-projects)
+;; (define-key org-jira-map (kbd ";ib") 'org-jira-browse-issue)
+;; (define-key org-jira-map (kbd ";ig") 'org-jira-get-issues)
+;; (define-key org-jira-map (kbd ";ij") 'org-jira-get-issues-from-custom-jql)
+;; (define-key org-jira-map (kbd ";ih") 'org-jira-get-issues-headonly)
+;; (define-key org-jira-map (kbd ";iu") 'org-jira-update-issue)
+;; (define-key org-jira-map (kbd ";iw") 'org-jira-progress-issue)
+;; (define-key org-jira-map (kbd ";in") 'org-jira-progress-issue-next)
+;; (define-key org-jira-map (kbd ";ia") 'org-jira-assign-issue)
+;; (define-key org-jira-map (kbd ";ir") 'org-jira-refresh-issue)
+;; (define-key org-jira-map (kbd ";iR") 'org-jira-refresh-issues-in-buffer)
+;; (define-key org-jira-map (kbd ";ic") 'org-jira-create-issue)
+;; (define-key org-jira-map (kbd ";ik") 'org-jira-copy-current-issue-key)
+;; (define-key org-jira-map (kbd ";sc") 'org-jira-create-subtask)
+;; (define-key org-jira-map (kbd ";sg") 'org-jira-get-subtasks)
+;; (define-key org-jira-map (kbd ";cc") 'org-jira-add-comment)
+;; (define-key org-jira-map (kbd ";cu") 'org-jira-update-comment)
+;; (define-key org-jira-map (kbd ";wu") 'org-jira-update-worklogs-from-org-clocks)
+;; (define-key org-jira-map (kbd ";tj") 'org-jira-todo-to-jira)
+;; (define-key org-jira-map (kbd ";if") 'org-jira-get-issues-by-fixversion)
 
 (dap-ui-mode 1)
 (dap-mode 1)
