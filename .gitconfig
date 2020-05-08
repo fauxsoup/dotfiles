@@ -13,3 +13,5 @@
 	tool = vimdiff
 [alias]
 	d = difftool
+[core]
+	editor = emacsclient -t

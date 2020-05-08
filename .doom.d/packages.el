@@ -51,3 +51,6 @@
 (package! org-gcal)
 (package! exwm)
 (package! minimap)
+(package! indium)
+(package! op-typescript)
+(package! buffer-expose)

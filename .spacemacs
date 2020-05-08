@@ -38,7 +38,9 @@ values."
      ;; ----------------------------------------------------------------
      helm
      auto-completion
-     javascript
+     (javascript :variables
+                 javascript-backend 'lsp
+                 javasciprt-fmt-tool 'clang-format)
      typescript
      better-defaults
      emacs-lisp
@@ -46,6 +48,7 @@ values."
      markdown
      org
      lsp
+     dap
      (shell :variables
             shell-default-shell 'vterm
             shell-default-term-shell "/bin/zsh"
@@ -65,7 +68,7 @@ values."
    ;; wrapped in a layer. If you need some configuration for these
    ;; packages, then consider creating a layer. You can also put the
    ;; configuration in `dotspacemacs/user-config'.
-   dotspacemacs-additional-packages '(kaolin-themes writeroom-mode)
+   dotspacemacs-additional-packages '(kaolin-themes writeroom-mode xterm-color ansi-color nvm exec-path-from-shell eyebrowse org-jira indium lsp)
    ;; A list of packages that cannot be updated.
    dotspacemacs-frozen-packages '()
    ;; A list of packages that will not be installed and loaded.
@@ -145,7 +148,7 @@ values."
    ;; Default font, or prioritized list of fonts. `powerline-scale' allows to
    ;; quickly tweak the mode-line size to make separators look not too crappy.
    dotspacemacs-default-font '("Hack"
-                               :size 10
+                               :size 12
                                :weight normal
                                :width normal
                                :powerline-scale 1.1)
@@ -190,7 +193,7 @@ values."
    dotspacemacs-display-default-layout nil
    ;; If non nil then the last auto saved layouts are resume automatically upon
    ;; start. (default nil)
-   dotspacemacs-auto-resume-layouts nil
+   dotspacemacs-auto-resume-layouts t
    ;; Size (in MB) above which spacemacs will prompt to open the large file
    ;; literally to avoid performance issues. Opening a file literally means that
    ;; no major mode or minor modes are active. (default is 1)
@@ -288,7 +291,7 @@ values."
    dotspacemacs-highlight-delimiters 'all
    ;; If non nil, advise quit functions to keep server open when quitting.
    ;; (default nil)
-   dotspacemacs-persistent-server nil
+   dotspacemacs-persistent-server t
    ;; List of search tool executable names. Spacemacs uses the first installed
    ;; tool of the list. Supported tools are `ag', `pt', `ack' and `grep'.
    ;; (default '("ag" "pt" "ack" "grep"))
@@ -321,12 +324,28 @@ layers configuration.
 This is the place where most of your configurations should be done. Unless it is
 explicitly specified that a variable should be set before a package is loaded,
 you should place your code here."
+    (define-key evil-motion-state-map (kbd "C-h") #'evil-window-left)
+    (define-key evil-motion-state-map (kbd "C-j") #'evil-window-down)
+    (define-key evil-motion-state-map (kbd "C-k") #'evil-window-up)
+    (define-key evil-motion-state-map (kbd "C-l") #'evil-window-right)
+    (exec-path-from-shell-initialize)
+    (nvm-use (caar (last (nvm--installed-versions))))
+    (dap-mode 1)
+    (dap-ui-mode 1)
+    (dap-tooltip-mode 1)
+    (tooltip-mode 1)
+    (dap-ui-controls-mode 1)
     (setq
+     layouts-enable-autosave t
+     layouts-enable-local-variables t
      auto-completion-enable-snippets-in-popup t
      auto-completion-enable-help-tooltip t
      treemacs-follow-mode t
-     global-company-mode 1
-  ))
+     global-company-mode 0
+     jiralib-url "https://amdglobal/atlassian.net")
+    (require 'org-jira)
+    (require 'dap-node)
+    (require 'indium))
 
 ;; Do not write anything past this comment. This is where Emacs will
 ;; auto-generate custom variable definitions.
@@ -377,7 +396,7 @@ This function is called at the very end of Spacemacs initialization."
      ("\\?\\?\\?+" . "#dc752f"))))
  '(package-selected-packages
    (quote
-    (smart-mode-line-atom-one-dark-theme smart-mode-line-powerline-theme yaml-mode tide typescript-mode smeargle orgit org-projectile org-category-capture org-present org-pomodoro alert log4e gntp org-mime org-download mmm-mode markdown-toc markdown-mode magit-gitflow magit-popup htmlize helm-gitignore request helm-company helm-c-yasnippet gnuplot gitignore-mode gitconfig-mode gitattributes-mode git-timemachine git-messenger git-link git-gutter-fringe+ git-gutter-fringe fringe-helper git-gutter+ git-gutter gh-md fuzzy flyspell-correct-helm flyspell-correct flycheck-pos-tip pos-tip flycheck evil-magit magit git-commit with-editor transient diff-hl company-statistics company auto-yasnippet auto-dictionary ac-ispell auto-complete web-beautify livid-mode skewer-mode simple-httpd json-mode json-snatcher json-reformat js2-refactor yasnippet dash multiple-cursors s js2-mode js-doc coffee-mode which-key use-package pcre2el macrostep hydra lv helm-themes helm-swoop helm-projectile projectile pkg-info epl helm-mode-manager helm-make helm-flx flx helm-descbinds helm-ag exec-path-from-shell evil-visualstar evil-escape evil goto-chg undo-tree elisp-slime-nav diminish bind-map bind-key auto-compile packed ace-window ace-jump-helm-line helm avy helm-core popup async))))
+    (org-jira nvm smart-mode-line-atom-one-dark-theme smart-mode-line-powerline-theme yaml-mode tide typescript-mode smeargle orgit org-projectile org-category-capture org-present org-pomodoro alert log4e gntp org-mime org-download mmm-mode markdown-toc markdown-mode magit-gitflow magit-popup htmlize helm-gitignore request helm-company helm-c-yasnippet gnuplot gitignore-mode gitconfig-mode gitattributes-mode git-timemachine git-messenger git-link git-gutter-fringe+ git-gutter-fringe fringe-helper git-gutter+ git-gutter gh-md fuzzy flyspell-correct-helm flyspell-correct flycheck-pos-tip pos-tip flycheck evil-magit magit git-commit with-editor transient diff-hl company-statistics company auto-yasnippet auto-dictionary ac-ispell auto-complete web-beautify livid-mode skewer-mode simple-httpd json-mode json-snatcher json-reformat js2-refactor yasnippet dash multiple-cursors s js2-mode js-doc coffee-mode which-key use-package pcre2el macrostep hydra lv helm-themes helm-swoop helm-projectile projectile pkg-info epl helm-mode-manager helm-make helm-flx flx helm-descbinds helm-ag exec-path-from-shell evil-visualstar evil-escape evil goto-chg undo-tree elisp-slime-nav diminish bind-map bind-key auto-compile packed ace-window ace-jump-helm-line helm avy helm-core popup async))))
 (custom-set-faces
  ;; custom-set-faces was added by Custom.
  ;; If you edit it by hand, you could mess it up, so be careful.
@@ -385,3 +404,31 @@ This function is called at the very end of Spacemacs initialization."
  ;; If there is more than one, they won't work right.
  )
 )
+
+(defun which-key-define-key-recursively (map key def &optional at-root)
+  "Recursively bind KEY in MAP to DEF on every level of MAP except the first. If AT-ROOT is non-nil, the binding is also placed at the root of MAP."
+  (when at-root (define-key map key def))
+  (map-keymap
+   (lambda (_ev df)
+     (when (keymapp df) (which-key-define-key-recursively df key def t)))
+   map))
+
+(which-key-define-key-recursively global-map [escape] 'ignore t)
+
+(defun my/xterm-colorize-buffer ()
+  (let ((buffer-read-only nil))
+    (xterm-color-colorize-buffer t)))
+(defun my/ansi-colorize-buffer ()
+  (let ((buffer-read-only nil))
+    (ansi-color-apply-on-region (point-min) (point-max))))
+
+(add-hook 'compilation-filter-hook 'my/ansi-colorize-buffer)
+
+(defun bb/setup-term-mode ()
+  (evil-local-set-key 'insert (kbd "C-r") 'bb/send-C-r))
+
+(defun bb/send-C-r ()
+  (interactive)
+  (term-send-raw-string "\C-r"))
+
+(add-hook 'vterm-mode-hook 'bb/setup-term-mode)
