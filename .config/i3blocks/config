@@ -1,0 +1,134 @@
+command=/usr/lib/i3blocks/$BLOCK_NAME
+separator_block_width=0
+markup=pango
+color=#FFFFFF
+
+[sep6]
+command=echo ' '
+color=#93a1a1
+background=#00000000
+interval=once
+
+[cputempicon]
+label= 💻
+command=echo " "
+background=#93a1a1
+interval=once
+
+[cputemp]
+label=
+command=sensors | awk '/^Package/ {print "CPU " $4}'
+interval=5
+background=#93a1a1
+
+#[sep5]
+#command=echo ' '
+#color=#586e75
+#background=#073642
+#interval=once
+
+#[weather]
+#label=
+#command=~/.scripts/i3weather
+#interval=1800
+#background=#586e75
+
+[sep4]
+command=echo ' '
+color=#586e75
+background=#93a1a1
+interval=once
+
+[mpd]
+label= ♪
+command=echo $(mpc status | ~/.scripts/mus.awk)
+interval=2
+signal=11
+align=left
+background=#586e75
+
+[volumeicon]
+label= 🔊
+command=echo " "
+interval=once
+background=#586e75
+
+[volume]
+label=
+command=amixer get Master | grep -E -o '[0-9]{1,3}?%' | head -1
+interval=once
+signal=1
+background=#586e75
+
+#[sep3]
+#command=echo ' '
+#color=#586e75
+#background=#073642
+#interval=once
+
+#[iface]
+#label= ↕
+##instance=wlan0
+#interval=10
+#background=#586e75
+
+[sep2]
+command=echo ' '
+color=#073642
+background=#586e75
+interval=once
+
+[wifilabel]
+label= 📶
+color=#FFAA00
+command=echo " "
+interval=once
+background=#073642
+
+[wifi]
+label=
+instance=wlp3s0
+interval=10
+background=#073642
+
+[sep1]
+command=echo ' '
+color=#002b36
+background=#073642
+interval=once
+
+[batterylabel]
+label=
+command=echo $(acpi | cut -d " " -f3 |  sed -e "s/,//g;s/Discharging/🔋/;s/Charging/🔌/;s/Unknown/🔌/;s/Full/⚡/;")
+interval=5
+background=#002b36
+
+[battery]
+label=
+command=echo $(acpi | cut -d " " -f4-5 |  sed -e "s/,//g;s/ 0*/ /g;s/ :/ /g")
+interval=5
+background=#002b36
+
+[sep0]
+command=echo ' '
+color=#073642
+background=#002b36
+interval=once
+
+[timelabel]
+label= 🕐
+command=echo " "
+interval=once
+background=#073642
+
+[time]
+label=
+command=echo $(date '+%H:%M %a %d %b %Y')
+background=#073642
+interval=5
+
+[bgn]
+command=echo ' '
+background=#073642
+color=#00000000
+interval=once
