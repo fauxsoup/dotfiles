@@ -36,6 +36,22 @@
       org-gcal-client-secret "bpl0cM8DyeldHjhmu5AGwnO5"
       org-gcal-file-alist '(("zachary.hueras@gmail.com" . "gmail.org")))
 
+(setq mu4e-maildir-list (list (expand-file-name "~/.mail/work"))
+      mu4e-get-mail-command "mbscync -a"
+      mu4e-html2text-command "w3m -T text/html"
+      mu4e-update-interval 120
+      mu4e-headers-auto-update t
+      mu4e-compose-signature-auto-include t
+      mu4e-compose-signature "~/.mail/signature"
+      mu4e-show-images t
+      mu4e-change-filenames-when-moving t
+      smtpmail-queue-mail nil
+      message-send-mail-function 'smtpmail-send-it
+      smtpmail-default-smtp-server "localhost"
+      smtpmail-smtp-server "localhost"
+      smtpmail-smtp-service 1025
+      smtpmail-debug-info t)
+
 ;; This determines the style of line numbers in effect. If set to `nil', line
 ;; numbers are disabled. For relative line numbers, set this to `relative'.
 (setq display-line-numbers-type t)
