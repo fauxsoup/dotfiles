@@ -50,3 +50,4 @@
 (package! realgud-node-inspect)
 (package! org-gcal)
 (package! exwm)
+(package! minimap)

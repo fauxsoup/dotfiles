@@ -92,52 +92,52 @@
 (tooltip-mode 1)
 (dap-ui-controls-mode 1)
 
-(require 'exwm)
-(require 'exwm-randr)
-(require 'exwm-systemtray)
-(add-hook 'exwm-randr-screen-change-hook
-          (lambda ()
-            (start-process-shell-command
-             "xrandr" nil "xrandr --output DP-2 --right-of HDMI-0 --auto")))
-
-(setq exwm-workspace-show-all-buffers t
-      exwm-randr-workspace-monitor-plist '(1 "DP-1" 2 "HDMI-0")
-      menu-bar-mode 1
-      tool-bar-mode 1
-      scroll-bar-mode 1
-      fringe-mode 1
-      display-time-default-load-average nil
-      exwm-workspace-number 4)
-
-(setq exwm-input-global-keys `(
-                               ([?\s-r] . exwm-reset)
-                               ([?\s-w] . exwm-workspace-switch)
-                               ,@(mapcar (lambda (i)
-                                           `(,(kbd (format "s-%d" i)) .
-                                             (lambda ()
-                                               (interactive)
-                                               (exwm-workspace-switch-create ,i))))
-                                         (number-sequence 0 9))
-                               ;; Bind "s-&" to launch applications ('M-&' also works if the output
-                               ;; buffer does not bother you).
-                               ([?\s-&] . (lambda (command)
-                                            (interactive (list (read-shell-command "$ ")))
-                                            (start-process-shell-command command nil command)))
-                               ;; Bind "s-<f2>" to "slock", a simple X display locker.
-                               ([s-f2] . (lambda ()
-                                           (interactive)
-                                           (start-process "" nil "/usr/bin/slock")))
-                               ))
-
-(display-time-mode t)
-(exwm-randr-enable)
-(exwm-systemtray-enable)
-(exwm-enable)
-
-(push ?\s-\  exwm-input-prefix-keys)
-
-(defun exwm-logout ()
-  (interactive)
-  (recentf-save-list)
-  (save-some-buffers)
-  (start-process-shell-command "logout" nil "lxsession-logout"))
+;; (require 'exwm)
+;; (require 'exwm-randr)
+;; (require 'exwm-systemtray)
+;; (add-hook 'exwm-randr-screen-change-hook
+;;           (lambda ()
+;;             (start-process-shell-command
+;;              "xrandr" nil "xrandr --output DP-2 --right-of HDMI-0 --auto")))
+;;
+;; (setq exwm-workspace-show-all-buffers t
+;;       exwm-randr-workspace-monitor-plist '(1 "DP-1" 2 "HDMI-0")
+;;       menu-bar-mode 1
+;;       tool-bar-mode 1
+;;       scroll-bar-mode 1
+;;       fringe-mode 1
+;;       display-time-default-load-average nil
+;;       exwm-workspace-number 4)
+;;
+;; (setq exwm-input-global-keys `(
+;;                                ([?\s-r] . exwm-reset)
+;;                                ([?\s-w] . exwm-workspace-switch)
+;;                                ,@(mapcar (lambda (i)
+;;                                            `(,(kbd (format "s-%d" i)) .
+;;                                              (lambda ()
+;;                                                (interactive)
+;;                                                (exwm-workspace-switch-create ,i))))
+;;                                          (number-sequence 0 9))
+;;                                ;; Bind "s-&" to launch applications ('M-&' also works if the output
+;;                                ;; buffer does not bother you).
+;;                                ([?\s-p] . (lambda (command)
+;;                                             (interactive (list (read-shell-command "$ ")))
+;;                                             (start-process-shell-command command nil command)))
+;;                                ;; Bind "s-<f2>" to "slock", a simple X display locker.
+;;                                ([s-f2] . (lambda ()
+;;                                            (interactive)
+;;                                            (start-process "" nil "/usr/bin/slock")))
+;;                                ))
+;;
+;; (display-time-mode t)
+;; (exwm-randr-enable)
+;; (exwm-systemtray-enable)
+;; (exwm-enable)
+;;
+;; (push ?\s-\  exwm-input-prefix-keys)
+;;
+;; (defun exwm-logout ()
+;;   (interactive)
+;;   (recentf-save-list)
+;;   (save-some-buffers)
+;;   (start-process-shell-command "logout" nil "lxsession-logout"))
