@@ -1,0 +1,10 @@
+[Unit]
+Description=Davmail
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/davmail
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
