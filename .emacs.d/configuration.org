@@ -1,0 +1,1671 @@
+Configure load-path and use-package.
+
+#+begin_src emacs-lisp
+    (add-to-list 'load-path "~/.emacs.d/resources")
+    (require 'use-package-ensure)
+    (setq use-package-always-ensure t)
+#+end_src
+
+Always compile packages and use the newest version available.
+
+#+begin_src emacs-lisp
+    (use-package auto-compile
+	:config (auto-compile-on-load-mode))
+
+    (setq load-prefer-newer t)
+#+end_src
+
+Include some =sensible-defaults=
+
+#+begin_src emacs-lisp
+(load-file "~/.emacs.d/sensible-defaults.el")
+(sensible-defaults/use-all-settings)
+(sensible-defaults/use-all-keybindings)
+#+end_src
+
+Use general for defining keys
+
+#+begin_src emacs-lisp
+(use-package general
+    :config
+    (setq general-default-keymaps 'evil-normal-state-map)
+    (general-evil-setup t))
+#+end_src
+
+Borrow soup's use-package! macro and keywords
+#+begin_src emacs-lisp
+(defmacro use-package! (name &rest plist)
+  "Declares and configures a package.
+This is a thin wrapper around `use-package', and is ignored if the NAME package
+is disabled by the user (with `package!').
+See `use-package' to see what properties can be provided. Soup adds support for
+two extra properties:
+:after-call SYMBOL|LIST
+  Takes a symbol or list of symbols representing functions or hook variables.
+  The first time any of these functions or hooks are executed, the package is
+  loaded.
+:defer-incrementally SYMBOL|LIST|t
+  Takes a symbol or list of symbols representing packages that will be loaded
+  incrementally at startup before this one. This is helpful for large packages
+  like magit or org, which load a lot of dependencies on first load. This lets
+  you load them piece-meal during idle periods, so that when you finally do need
+  the package, it'll load quicker.
+  NAME is implicitly added if this property is present and non-nil. No need to
+  specify it. A value of `t' implies NAME."
+  (declare (indent 1))
+  (unless (or (memq name soup-disabled-packages)
+              ;; At compile-time, use-package will forcibly load packages to
+              ;; prevent compile-time errors. However, if a Soup user has
+              ;; disabled packages you get file-missing package errors, so it's
+              ;; necessary to check for packages at compile time:
+              (and (bound-and-true-p byte-compile-current-file)
+                   (not (locate-library (symbol-name name)))))
+    `(use-package ,name ,@plist)))
+(with-eval-after-load 'use-package-core
+  ;; Macros are already fontified, no need for this
+  (font-lock-remove-keywords 'emacs-lisp-mode use-package-font-lock-keywords)
+
+  ;; We define :minor and :magic-minor from the `auto-minor-mode' package here
+  ;; so we don't have to load `auto-minor-mode' so early.
+  (dolist (keyword '(:minor :magic-minor))
+    (setq use-package-keywords
+          (use-package-list-insert keyword use-package-keywords :commands)))
+
+  (defalias 'use-package-normalize/:minor #'use-package-normalize-mode)
+  (defun use-package-handler/:minor (name _ arg rest state)
+    (use-package-handle-mode name 'auto-minor-mode-alist arg rest state))
+
+  (defalias 'use-package-normalize/:magic-minor #'use-package-normalize-mode)
+  (defun use-package-handler/:magic-minor (name _ arg rest state)
+    (use-package-handle-mode name 'auto-minor-mode-magic-alist arg rest state))
+
+  ;; Adds two keywords to `use-package' to expand its lazy-loading capabilities:
+  ;;
+  ;;   :after-call SYMBOL|LIST
+  ;;   :defer-incrementally SYMBOL|LIST|t
+  ;;
+  ;; Check out `use-package!'s documentation for more about these two.
+  (dolist (keyword '(:defer-incrementally :after-call))
+    (push keyword use-package-deferring-keywords)
+    (setq use-package-keywords
+          (use-package-list-insert keyword use-package-keywords :after)))
+
+  (defalias 'use-package-normalize/:defer-incrementally #'use-package-normalize-symlist)
+  (defun use-package-handler/:defer-incrementally (name _keyword targets rest state)
+    (use-package-concat
+     `((soup-load-packages-incrementally
+        ',(if (equal targets '(t))
+              (list name)
+            (append targets (list name)))))
+     (use-package-process-keywords name rest state)))
+
+  (defalias 'use-package-normalize/:after-call #'use-package-normalize-symlist)
+  (defun use-package-handler/:after-call (name _keyword hooks rest state)
+    (if (plist-get state :demand)
+        (use-package-process-keywords name rest state)
+      (let ((fn (make-symbol (format "soup--after-call-%s-h" name))))
+        (use-package-concat
+         `((fset ',fn
+                 (lambda (&rest _)
+                   (soup-log "Loading deferred package %s from %s" ',name ',fn)
+                   (condition-case e
+                       ;; If `default-directory' is a directory that doesn't
+                       ;; exist or is unreadable, Emacs throws up file-missing
+                       ;; errors, so we set it to a directory we know exists and
+                       ;; is readable.
+                       (let ((default-directory soup-emacs-dir))
+                         (require ',name))
+                     ((debug error)
+                      (message "Failed to load deferred package %s: %s" ',name e)))
+                   (when-let (deferral-list (assq ',name soup--deferred-packages-alist))
+                     (dolist (hook (cdr deferral-list))
+                       (advice-remove hook #',fn)
+                       (remove-hook hook #',fn))
+                     (delq! deferral-list soup--deferred-packages-alist)
+                     (unintern ',fn nil)))))
+         (let (forms)
+           (dolist (hook hooks forms)
+             (push (if (string-match-p "-\\(?:functions\\|hook\\)$" (symbol-name hook))
+                       `(add-hook ',hook #',fn)
+                     `(advice-add #',hook :before #',fn))
+                   forms)))
+         `((unless (assq ',name soup--deferred-packages-alist)
+             (push '(,name) soup--deferred-packages-alist))
+           (nconc (assq ',name soup--deferred-packages-alist)
+                  '(,@hooks)))
+         (use-package-process-keywords name rest state))))))
+#+end_src
+
+* Macros
+A collection of useful macros, mostly lifted from soup emacs
+#+begin_src emacs-lisp
+(defun window-tab-line-height () 1)
+(defun soup-keyword-intern (str)
+  "Converts STR (a string) into a keyword (`keywordp')."
+  (declare (pure t) (side-effect-free t))
+  (cl-check-type str string)
+  (intern (concat ":" str)))
+
+(defun soup-keyword-name (keyword)
+  "Returns the string name of KEYWORD (`keywordp') minus the leading colon."
+  (declare (pure t) (side-effect-free t))
+  (cl-check-type keyword keyword)
+  (substring (symbol-name keyword) 1))
+(defmacro soup-log (format-string &rest args)
+  "Log to *Messages* if `soup-debug-mode' is on.
+Does not interrupt the minibuffer if it is in use, but still logs to *Messages*.
+Accepts the same arguments as `message'."
+  `(when soup-debug-mode
+     (let ((inhibit-message (active-minibuffer-window)))
+       (message
+        ,(concat (propertize "SOUP " 'face 'font-lock-comment-face)
+                 (when (bound-and-true-p soup--current-module)
+                   (propertize
+                    (format "[%s/%s] "
+                            (soup-keyword-name (car soup--current-module))
+                            (cdr soup--current-module))
+                    'face 'warning))
+                 format-string)
+        ,@args))))
+(defalias 'define-key! #'general-def)
+(defmacro delq! (elt list &optional fetcher)
+  "`delq' ELT from LIST in-place.
+If FETCHER is a function, ELT is used as the key in LIST (an alist)."
+  `(setq ,list
+         (delq ,(if fetcher
+                    `(funcall ,fetcher ,elt ,list)
+                  elt)
+               ,list)))
+
+(defmacro after! (package &rest body)
+  "Evaluate BODY after PACKAGE have loaded.
+PACKAGE is a symbol or list of them. These are package names, not modes,
+functions or variables. It can be:
+- An unquoted package symbol (the name of a package)
+    (after! helm BODY...)
+- An unquoted list of package symbols (i.e. BODY is evaluated once both magit
+  and git-gutter have loaded)
+    (after! (magit git-gutter) BODY...)
+- An unquoted, nested list of compound package lists, using any combination of
+  :or/:any and :and/:all
+    (after! (:or package-a package-b ...)  BODY...)
+    (after! (:and package-a package-b ...) BODY...)
+    (after! (:and package-a (:or package-b package-c) ...) BODY...)
+  Without :or/:any/:and/:all, :and/:all are implied.
+This is a wrapper around `eval-after-load' that:
+1. Suppresses warnings for disabled packages at compile-time
+2. No-ops for package that are disabled by the user (via `package!')
+3. Supports compound package statements (see below)
+4. Prevents eager expansion pulling in autoloaded macros all at once"
+  (declare (indent defun) (debug t))
+  (if (symbolp package)
+      (unless (memq package (bound-and-true-p soup-disabled-packages))
+        (list (if (or (not (bound-and-true-p byte-compile-current-file))
+                      (require package nil 'noerror))
+                  #'progn
+                #'with-no-warnings)
+              (let ((body (macroexp-progn body)))
+                `(if (featurep ',package)
+                     ,body
+                   ;; We intentionally avoid `with-eval-after-load' to prevent
+                   ;; eager macro expansion from pulling (or failing to pull) in
+                   ;; autoloaded macros/packages.
+                   (eval-after-load ',package ',body)))))
+    (let ((p (car package)))
+      (cond ((not (keywordp p))
+             `(after! (:and ,@package) ,@body))
+            ((memq p '(:or :any))
+             (macroexp-progn
+              (cl-loop for next in (cdr package)
+                       collect `(after! ,next ,@body))))
+            ((memq p '(:and :all))
+             (dolist (next (cdr package))
+               (setq body `((after! ,next ,@body))))
+             (car body))))))
+#+end_src
+* Variables
+#+begin_src emacs-lisp
+(defvar +company-backend-alist
+  '((text-mode company-dabbrev company-yasnippet company-ispell)
+    (prog-mode company-capf company-yasnippet)
+    (conf-mode company-capf company-dabbrev-code company-yasnippet))
+  "An alist matching modes to company backends. The backends for any mode is
+built from this.")
+(defconst soup-emacs-dir (eval-when-compile (file-truename user-emacs-directory))
+	  "The path to the currently loaded .emacs.d directory. Must end with a slash.")
+(defvar soup-debug-mode (or (getenv "DEBUG") init-file-debug)
+  "If non-nil, soup will log more.
+
+Use `soup/toggle-debug-mode' to toggle it. The --debug-init flag and setting the
+DEBUG envvar will enable this at startup.")
+(defvar soup--deferred-packages-alist '(t))
+
+(defvar soup-disabled-packages nil)
+(defvar +treemacs-git-mode 'simple
+  "Type of git integration for `treemacs-git-mode'.
+There are 3 possible values:
+  1) `simple', which highlights only files based on their git status, and is
+     slightly faster,
+  2) `extended', which highlights both files and directories, but requires
+     python,
+  3) `deferred', same as extended, but highlights asynchronously.
+This must be set before `treemacs' has loaded.")
+
+;;; tools/lookup/config.el -*- lexical-binding: t; -*-
+
+;; "What am I looking at?" This module helps you answer this question.
+;;
+;;   + `+lookup/definition': a jump-to-definition that should 'just work'
+;;   + `+lookup/references': find a symbol's references in the current project
+;;   + `+lookup/file': open the file referenced at point
+;;   + `+lookup/online'; look up a symbol on online resources
+;;   + `+lookup/in-docsets': look up in Dash docsets
+;;
+;; This module uses `xref', an experimental new library in Emacs. It may change
+;; in the future. When xref can't be depended on it will fall back to
+;; `dumb-jump' to find what you want.
+
+(defvar +lookup-provider-url-alist
+  (append '(("Soup Emacs issues" "https://github.com/hlissner/soup-emacs/issues?q=is%%3Aissue+%s")
+            ("Google"            +lookup--online-backend-google "https://google.com/search?q=%s")
+            ("Google images"     "https://www.google.com/images?q=%s")
+            ("Google maps"       "https://maps.google.com/maps?q=%s")
+            ("Project Gutenberg" "http://www.gutenberg.org/ebooks/search/?query=%s")
+            ("DuckDuckGo"        +lookup--online-backend-duckduckgo "https://duckduckgo.com/?q=%s")
+            ("DevDocs.io"        "https://devdocs.io/#q=%s")
+            ("StackOverflow"     "https://stackoverflow.com/search?q=%s")
+            ("Github"            "https://github.com/search?ref=simplesearch&q=%s")
+            ("Youtube"           "https://youtube.com/results?aq=f&oq=&search_query=%s")
+            ("Wolfram alpha"     "https://wolframalpha.com/input/?i=%s")
+            ("Wikipedia"         "https://wikipedia.org/search-redirect.php?language=en&go=Go&search=%s")))
+  "An alist that maps online resources to either:
+  1. A search url (needs on '%s' to substitute with an url encoded query),
+  2. A non-interactive function that returns the search url in #1,
+  3. An interactive command that does its own search for that provider.
+Used by `+lookup/online'.")
+
+(defvar +lookup-open-url-fn #'browse-url
+  "Function to use to open search urls.")
+
+(defvar +lookup-definition-functions
+  '(+lookup-xref-definitions-backend-fn
+    +lookup-dumb-jump-backend-fn
+    +lookup-project-search-backend-fn
+    +lookup-evil-goto-definition-backend-fn)
+  "Functions for `+lookup/definition' to try, before resorting to `dumb-jump'.
+Stops at the first function to return non-nil or change the current
+window/point.
+If the argument is interactive (satisfies `commandp'), it is called with
+`call-interactively' (with no arguments). Otherwise, it is called with one
+argument: the identifier at point. See `set-lookup-handlers!' about adding to
+this list.")
+
+(defvar +lookup-references-functions
+  '(+lookup-xref-references-backend-fn
+    +lookup-project-search-backend-fn)
+  "Functions for `+lookup/references' to try, before resorting to `dumb-jump'.
+Stops at the first function to return non-nil or change the current
+window/point.
+If the argument is interactive (satisfies `commandp'), it is called with
+`call-interactively' (with no arguments). Otherwise, it is called with one
+argument: the identifier at point. See `set-lookup-handlers!' about adding to
+this list.")
+
+(defvar +lookup-documentation-functions
+  '(+lookup-online-backend-fn)
+  "Functions for `+lookup/documentation' to try, before resorting to
+`dumb-jump'. Stops at the first function to return non-nil or change the current
+window/point.
+If the argument is interactive (satisfies `commandp'), it is called with
+`call-interactively' (with no arguments). Otherwise, it is called with one
+argument: the identifier at point. See `set-lookup-handlers!' about adding to
+this list.")
+
+(defvar +lookup-file-functions ()
+  "Function for `+lookup/file' to try, before restoring to `find-file-at-point'.
+Stops at the first function to return non-nil or change the current
+window/point.
+If the argument is interactive (satisfies `commandp'), it is called with
+`call-interactively' (with no arguments). Otherwise, it is called with one
+argument: the identifier at point. See `set-lookup-handlers!' about adding to
+this list.")
+#+end_src
+* Functions
+#+begin_src emacs-lisp
+;;;###autoload
+(defun +company-box-icons--elisp-fn (candidate)
+(when (derived-mode-p 'emacs-lisp-mode)
+    (let ((sym (intern candidate)))
+    (cond ((fboundp sym)  'ElispFunction)
+            ((boundp sym)   'ElispVariable)
+            ((featurep sym) 'ElispFeature)
+            ((facep sym)    'ElispFace)))))
+(defun soup-temp-buffer-p (buf)
+  "Returns non-nil if BUF is temporary."
+  (equal (substring (buffer-name buf) 0 1) " "))
+(defun +company--backends ()
+  (let (backends)
+    (let ((mode major-mode)
+          (modes (list major-mode)))
+      (while (setq mode (get mode 'derived-mode-parent))
+        (push mode modes))
+      (dolist (mode modes)
+        (dolist (backend (append (cdr (assq mode +company-backend-alist))
+                                 (default-value 'company-backends)))
+          (push backend backends)))
+      (delete-dups
+       (append (cl-loop for (mode . backends) in +company-backend-alist
+                        if (or (eq major-mode mode)  ; major modes
+                               (and (boundp mode)
+                                    (symbol-value mode))) ; minor modes
+                        append backends)
+               (nreverse backends))))))
+;;;###autoload
+(defun +company-init-backends-h ()
+  "Set `company-backends' for the current buffer."
+  (or (memq major-mode '(fundamental-mode special-mode))
+      buffer-read-only
+      (soup-temp-buffer-p (or (buffer-base-buffer) (current-buffer)))
+      (setq-local company-backends (+company--backends))))
+
+(put '+company-init-backends-h 'permanent-local-hook t)
+
+(defun soup-enlist (exp)
+  "Return EXP wrapped in a list, or as-is if already a list."
+  (declare (pure t) (side-effect-free t))
+  (if (listp exp) exp (list exp)))
+(defun soup-project-root (&optional dir)
+  "Return the project root of DIR (defaults to `default-directory').
+Returns nil if not in a project."
+  (let ((projectile-project-root (unless dir projectile-project-root))
+        projectile-require-project-root)
+    (projectile-project-root dir)))
+(defun soup-project-name (&optional dir)
+  "Return the name of the current project.
+Returns '-' if not in a valid project."
+  (if-let (soup-project-root (or (soup-project-root dir)
+                            (if dir (expand-file-name dir))))
+      (funcall projectile-project-name-function project-root)
+    "-"))
+(defun set-lookup-handlers! (modes &rest plist)
+  "Define jump handlers for major or minor MODES.
+A handler is either an interactive command that changes the current buffer
+and/or location of the cursor, or a function that takes one argument: the
+identifier being looked up, and returns either nil (failed to find it), t
+(succeeded at changing the buffer/moving the cursor), or 'deferred (assume this
+handler has succeeded, but expect changes not to be visible yet).
+There are several kinds of handlers, which can be defined with the following
+properties:
+:definition FN
+  Run when jumping to a symbol's definition. Used by `+lookup/definition'.
+:references FN
+  Run when looking for usage references of a symbol in the current project. Used
+  by `+lookup/references'.
+:documentation FN
+  Run when looking up documentation for a symbol. Used by
+  `+lookup/documentation'.
+:file FN
+  Run when looking up the file for a symbol/string. Typically a file path. Used
+  by `+lookup/file'.
+:xref-backend FN
+  Defines an xref backend for a major-mode. A :definition and :references
+  handler isn't necessary with a :xref-backend, but will have higher precedence
+  if they exist.
+:async BOOL
+  Indicates that *all* supplied FNs are asynchronous. Note: lookups will not try
+  any handlers after async ones, due to their nature. To get around this, you
+  must write a specialized wrapper to await the async response, or use a
+  different heuristic to determine, ahead of time, whether the async call will
+  succeed or not.
+  If you only want to specify one FN is async, declare it inline instead:
+    (set-lookup-handlers! 'rust-mode
+      :definition '(racer-find-definition :async t))
+Handlers can either be interactive or non-interactive. Non-interactive handlers
+must take one argument: the identifier being looked up. This function must
+change the current buffer or window or return non-nil when it succeeds.
+If it doesn't change the current buffer, or it returns nil, the lookup module
+will fall back to the next handler in `+lookup-definition-functions',
+`+lookup-references-functions', `+lookup-file-functions' or
+`+lookup-documentation-functions'.
+Consecutive `set-lookup-handlers!' calls will overwrite previously defined
+handlers for MODES. If used on minor modes, they are stacked onto handlers
+defined for other minor modes or the major mode it's activated in.
+This can be passed nil as its second argument to unset handlers for MODES. e.g.
+  (set-lookup-handlers! 'python-mode nil)
+\(fn MODES &key DEFINITION REFERENCES DOCUMENTATION FILE XREF-BACKEND ASYNC)"
+  (declare (indent defun))
+  (dolist (mode (soup-enlist modes))
+    (let ((hook (intern (format "%s-hook" mode)))
+          (fn   (intern (format "+lookup--init-%s-handlers-h" mode))))
+      (if (null (car plist))
+          (progn
+            (remove-hook hook fn)
+            (unintern fn nil))
+        (fset
+         fn
+         (lambda ()
+           (cl-destructuring-bind (&key definition references documentation file xref-backend async)
+               plist
+             (cl-mapc #'+lookup--set-handler
+                      (list definition
+                            references
+                            documentation
+                            file
+                            xref-backend)
+                      (list '+lookup-definition-functions
+                            '+lookup-references-functions
+                            '+lookup-documentation-functions
+                            '+lookup-file-functions
+                            'xref-backend-functions)
+                      (make-list 5 async)
+                      (make-list 5 (or (eq major-mode mode)
+                                       (and (boundp mode)
+                                            (symbol-value mode))))))))
+        (add-hook hook fn)))))
+
+
+;;
+;;; Helpers
+
+(defun +lookup--set-handler (spec functions-var &optional async enable)
+  (when spec
+    (cl-destructuring-bind (fn . plist)
+        (soup-enlist spec)
+      (if (not enable)
+          (remove-hook functions-var fn 'local)
+        (put fn '+lookup-async (or (plist-get plist :async) async))
+        (add-hook functions-var fn nil 'local)))))
+
+(defun +lookup--run-handler (handler identifier)
+  (if (commandp handler)
+      (call-interactively handler)
+    (funcall handler identifier)))
+
+(defun +lookup--run-handlers (handler identifier origin)
+  (soup-log "Looking up '%s' with '%s'" identifier handler)
+  (condition-case-unless-debug e
+      (let ((wconf (current-window-configuration))
+            (result (condition-case-unless-debug e
+                        (+lookup--run-handler handler identifier)
+                      (error
+                       (soup-log "Lookup handler %S threw an error: %s" handler e)
+                       'fail))))
+        (cond ((eq result 'fail)
+               (set-window-configuration wconf)
+               nil)
+              ((or (get handler '+lookup-async)
+                   (eq result 'deferred)))
+              ((or result
+                   (null origin)
+                   (/= (point-marker) origin))
+               (prog1 (point-marker)
+                 (set-window-configuration wconf)))))
+    ((error user-error)
+     (message "Lookup handler %S: %s" handler e)
+     nil)))
+
+(defun +lookup--jump-to (prop identifier &optional display-fn arg)
+  (let* ((origin (point-marker))
+         (handlers
+          (plist-get (list :definition '+lookup-definition-functions
+                           :references '+lookup-references-functions
+                           :documentation '+lookup-documentation-functions
+                           :file '+lookup-file-functions)
+                     prop))
+         (result
+          (if arg
+              (if-let
+                  (handler
+                   (intern-soft
+                    (completing-read "Select lookup handler: "
+                                     (delete-dups
+                                      (remq t (append (symbol-value handlers)
+                                                      (default-value handlers))))
+                                     nil t)))
+                  (+lookup--run-handlers handler identifier origin)
+                (user-error "No lookup handler selected"))
+            (run-hook-wrapped handlers #'+lookup--run-handlers identifier origin))))
+    (when (cond ((null result)
+                 (message "No lookup handler could find %S" identifier)
+                 nil)
+                ((markerp result)
+                 (funcall (or display-fn #'switch-to-buffer)
+                          (marker-buffer result))
+                 (goto-char result)
+                 result)
+                (result))
+      (with-current-buffer (marker-buffer origin)
+        (better-jumper-set-jump (marker-position origin)))
+      result)))
+;;
+;;; Lookup backends
+
+(defun +lookup--xref-show (fn identifier &optional show-fn)
+  (let ((xrefs (funcall fn
+                        (xref-find-backend)
+                        identifier)))
+    (when xrefs
+      (funcall (or show-fn #'xref--show-defs)
+               (lambda () xrefs)
+               nil)
+      (if (cdr xrefs)
+          'deferred
+        t))))
+
+(defun +lookup-xref-definitions-backend-fn (identifier)
+  "Non-interactive wrapper for `xref-find-definitions'"
+  (+lookup--xref-show 'xref-backend-definitions identifier #'xref--show-defs))
+
+(defun +lookup-xref-references-backend-fn (identifier)
+  "Non-interactive wrapper for `xref-find-references'"
+  (+lookup--xref-show 'xref-backend-references identifier #'xref--show-xrefs))
+
+(defun +lookup-dumb-jump-backend-fn (_identifier)
+  "Look up the symbol at point (or selection) with `dumb-jump', which conducts a
+project search with ag, rg, pt, or git-grep, combined with extra heuristics to
+reduce false positives.
+This backend prefers \"just working\" over accuracy."
+  (and (require 'dumb-jump nil t)
+       (dumb-jump-go)))
+
+(defun +lookup-project-search-backend-fn (identifier)
+  "Conducts a simple project text search for IDENTIFIER.
+Uses and requires `+ivy-file-search' or `+helm-file-search'. Will return nil if
+neither is available. These require ripgrep to be installed."
+  (unless identifier
+    (let ((query (rxt-quote-pcre identifier)))
+               (+ivy-file-search :query query)
+               t)))
+
+(defun +lookup-evil-goto-definition-backend-fn (_identifier)
+  "Uses `evil-goto-definition' to conduct a text search for IDENTIFIER in the
+current buffer."
+  (and (fboundp 'evil-goto-definition)
+       (ignore-errors
+         (cl-destructuring-bind (beg . end)
+             (bounds-of-thing-at-point 'symbol)
+           (evil-goto-definition)
+           (let ((pt (point)))
+             (not (and (>= pt beg)
+                       (<  pt end))))))))
+
+
+;;
+;;; Main commands
+
+;;;###autoload
+(defun +lookup/definition (identifier &optional arg)
+  "Jump to the definition of IDENTIFIER (defaults to the symbol at point).
+Each function in `+lookup-definition-functions' is tried until one changes the
+point or current buffer. Falls back to dumb-jump, naive
+ripgrep/the_silver_searcher text search, then `evil-goto-definition' if
+evil-mode is active."
+  (interactive (list (soup-thing-at-point-or-region)
+                     current-prefix-arg))
+  (cond ((null identifier) (user-error "Nothing under point"))
+        ((+lookup--jump-to :definition identifier nil arg))
+        ((error "Couldn't find the definition of %S" identifier))))
+
+;;;###autoload
+(defun +lookup/references (identifier &optional arg)
+  "Show a list of usages of IDENTIFIER (defaults to the symbol at point)
+Tries each function in `+lookup-references-functions' until one changes the
+point and/or current buffer. Falls back to a naive ripgrep/the_silver_searcher
+search otherwise."
+  (interactive (list (soup-thing-at-point-or-region)
+                     current-prefix-arg))
+  (cond ((null identifier) (user-error "Nothing under point"))
+        ((+lookup--jump-to :references identifier nil arg))
+        ((error "Couldn't find references of %S" identifier))))
+
+;;;###autoload
+(defun +lookup/documentation (identifier &optional arg)
+  "Show documentation for IDENTIFIER (defaults to symbol at point or selection.
+First attempts the :documentation handler specified with `set-lookup-handlers!'
+for the current mode/buffer (if any), then falls back to the backends in
+`+lookup-documentation-functions'."
+  (interactive (list (soup-thing-at-point-or-region)
+                     current-prefix-arg))
+  (cond ((+lookup--jump-to :documentation identifier #'pop-to-buffer arg))
+        ((user-error "Couldn't find documentation for %S" identifier))))
+
+(defvar ffap-file-finder)
+;;;###autoload
+(defun +lookup/file (path)
+  "Figure out PATH from whatever is at point and open it.
+Each function in `+lookup-file-functions' is tried until one changes the point
+or the current buffer.
+Otherwise, falls back on `find-file-at-point'."
+  (interactive
+   (progn
+     (require 'ffap)
+     (list
+      (or (ffap-guesser)
+          (ffap-read-file-or-url
+           (if ffap-url-regexp "Find file or URL: " "Find file: ")
+           (soup-thing-at-point-or-region))))))
+  (require 'ffap)
+  (cond ((and path
+              buffer-file-name
+              (file-equal-p path buffer-file-name)
+              (user-error "Already here")))
+
+        ((+lookup--jump-to :file path))
+
+        ((stringp path) (find-file-at-point path))
+
+        ((call-interactively #'find-file-at-point))))
+
+
+;;
+;;; Dictionary
+
+;;;###autoload
+(defun +lookup/dictionary-definition (identifier &optional arg)
+  "Look up the definition of the word at point (or selection)."
+  (interactive
+   (list (or (soup-thing-at-point-or-region 'word)
+             (read-string "Look up in dictionary: "))
+         current-prefix-arg))
+  (message "Looking up definition for %S" identifier)
+  (cond ((and IS-MAC (require 'osx-dictionary nil t))
+         (osx-dictionary--view-result identifier))
+        ((and +lookup-dictionary-prefer-offline
+              (require 'wordnut nil t))
+         (unless (executable-find wordnut-cmd)
+           (user-error "Couldn't find %S installed on your system"
+                       wordnut-cmd))
+         (wordnut-search identifier))
+        ((require 'define-word nil t)
+         (define-word identifier nil arg))
+        ((user-error "No dictionary backend is available"))))
+
+;;;###autoload
+(defun +lookup/synonyms (identifier &optional _arg)
+  "Look up and insert a synonym for the word at point (or selection)."
+  (interactive
+   (list (soup-thing-at-point-or-region 'word) ; TODO actually use this
+         current-prefix-arg))
+  (message "Looking up synonyms for %S" identifier)
+  (cond ((and +lookup-dictionary-prefer-offline
+              (require 'synosaurus-wordnet nil t))
+         (unless (executable-find synosaurus-wordnet--command)
+           (user-error "Couldn't find %S installed on your system"
+                       synosaurus-wordnet--command))
+         (synosaurus-choose-and-replace))
+        ((require 'powerthesaurus nil t)
+         (powerthesaurus-lookup-word-dwim))
+        ((user-error "No thesaurus backend is available"))))
+#+end_src
+* =evil-mode=
+
+  Enable evil mode, with evil-everywhere
+
+  #+begin_src emacs-lisp
+    (setq leader ","
+	  localleader ";")
+    (setq evil-want-abbrev-expand-on-insert-exit nil
+	  evil-want-integration t
+	  evil-want-keybinding nil)
+    (use-package evil
+	:commands (evil-mode evil-define-key)
+	:config
+	(use-package evil-surround
+	    :ensure t
+	    :config
+	    (global-evil-surround-mode))
+	(use-package evil-indent-textobject
+	    :ensure t)
+	(evil-mode 1))
+
+    (use-package evil-collection
+	:after evil)
+
+    (use-package evil-org
+	:after org
+	:config
+	(add-hook 'org-mode-hook 'evil-org-mode)
+	(add-hook 'evil-org-mode-hook (lambda () (evil-org-set-key-theme)))
+	(require 'evil-org-agenda)
+	(evil-org-agenda-set-keys))
+
+    (define-prefix-command 'leader-map)
+    (define-prefix-command 'localleader-map)
+    (define-prefix-command 'buffer-map)
+    (define-prefix-command 'workspace-define)
+
+    (general-create-definer leader-define
+	:prefix ","
+	:prefix-map 'leader-map)
+    (general-create-definer localleader-define
+	:prefix ","
+	:prefix-map 'localleader-map)
+    (general-create-definer buffer-define
+	:keymaps 'buffer-map)
+    (general-create-definer workspace-define
+	:keymaps 'workspace-map)
+
+    (leader-define
+	"a" '+treemacs/toggle
+	"b" 'buffer-map
+	"p" 'projectile-command-map
+	"." 'projectile-find-file)
+    (localleader-define
+        "p" 'isearch-repeat-backward
+        "n" 'isearch-repeat-forward
+        "k" 'isearch-repeat-backward
+        "j" 'isearch-repeat-forward)
+    (buffer-define
+	"l" 'list-buffers
+	"s" 'switch-to-buffer)
+    (workspace-define)
+    (evil-define-key 'motion 'global (kbd leader) leader-map)
+    (evil-define-key 'motion 'global (kbd localleader) localleader-map)
+  #+end_src
+
+* Personal Information
+** Who I Am
+
+   Set personal information
+
+   #+begin_src emacs-lisp
+(setq user-full-name "Zachary O. Hueras"
+    user-mail-address "zhueras@amdtelemedicine.com"
+    calendar-location-name "Boston, MA")
+   #+end_src
+
+* Completion
+Set up ivy-mode
+#+begin_src emacs-lisp
+(use-package ivy
+    :config
+    (ivy-mode 1)
+    (use-package ivy-hydra)
+    (use-package ivy-rich)
+    (use-package ivy-prescient)
+    (use-package ivy-posframe)
+    (use-package all-the-icons-ivy))
+#+end_src
+* UI Preferences
+** Window tweaks
+
+   No toolbars or scrollbars
+
+   #+begin_src emacs-lisp
+(tool-bar-mode 0)
+(menu-bar-mode 0)
+(scroll-bar-mode -1)
+   #+end_src
+
+   No visual bell
+
+   #+begin_src emacs-lisp
+(setq ring-bell-function 'ignore)
+   #+end_src
+
+** Use fancy symbols
+   #+begin_src emacs-lisp
+(global-prettify-symbols-mode t)
+   #+end_src
+
+** Themes
+   #+begin_src emacs-lisp
+(use-package kaolin-themes)
+
+(defun transparency (value)
+    "Sets the transparency of the frame window. 0=transparent, 100=opaque"
+    (interactive "nTransparency Value 0 - 100 opaque:")
+    (set-frame-parameter (selected-frame) 'alpha value))
+
+(defun soup/apply-theme ()
+    "Apply the kaolin-ocean theme and make frames slightly transparent"
+    (interactive)
+    (load-theme 'kaolin-ocean t)
+    (transparency 90))
+
+(if (daemonp)
+    (add-hook 'after-make-frame-functions
+	      (lambda (frame)
+		(with-selected-frame frame (soup/apply-theme))))
+  (soup/apply-theme))
+   #+end_src
+
+** Modeline
+
+*** Use Moody
+    #+begin_src emacs-lisp
+(use-package moody
+    :config
+    (setq x-underline-at-descent-line t)
+    (moody-replace-mode-line-buffer-identification)
+    (moody-replace-vc-mode))
+    #+end_src
+
+*** Use minions
+    #+begin_src emacs-lisp
+(use-package minions
+    :config
+    (setq minions-mode-line-lighter ""
+	minions-mode-line-delimiters '("" . ""))
+    (minions-mode 1))
+    #+end_src
+
+** Fonts
+   I use Hack.
+
+   #+begin_src emacs-lisp
+   (setq soup/default-font "Hack")
+(setq soup/default-font-size 12)
+(setq soup/current-font-size soup/default-font-size)
+
+(setq soup/font-change-increment 1.1)
+
+(defun soup/font-code ()
+  "Return a string representing the current font (like \"Inconsolata-14\")."
+  (concat soup/default-font "-" (number-to-string soup/current-font-size)))
+
+(defun soup/set-font-size ()
+  "Set the font to `soup/default-font' at `soup/current-font-size'.
+Set that for the current frame, and also make it the default for
+other, future frames."
+  (let ((font-code (soup/font-code)))
+    (if (assoc 'font default-frame-alist)
+	(setcdr (assoc 'font default-frame-alist) font-code)
+      (add-to-list 'default-frame-alist (cons 'font font-code)))
+    (set-frame-font font-code)))
+
+(defun soup/reset-font-size ()
+  "Change font size back to `soup/default-font-size'."
+  (interactive)
+  (setq soup/current-font-size soup/default-font-size)
+  (soup/set-font-size))
+
+(defun soup/increase-font-size ()
+  "Increase current font size by a factor of `soup/font-change-increment'."
+  (interactive)
+  (setq soup/current-font-size
+	(ceiling (* soup/current-font-size soup/font-change-increment)))
+  (soup/set-font-size))
+
+(defun soup/decrease-font-size ()
+  "Decrease current font size by a factor of `soup/font-change-increment', down to a minimum size of 1."
+  (interactive)
+  (setq soup/current-font-size
+	(max 1
+	     (floor (/ soup/current-font-size soup/font-change-increment))))
+  (soup/set-font-size))
+
+(define-key global-map (kbd "C-)") 'soup/reset-font-size)
+(define-key global-map (kbd "C-+") 'soup/increase-font-size)
+(define-key global-map (kbd "C-=") 'soup/increase-font-size)
+(define-key global-map (kbd "C-_") 'soup/decrease-font-size)
+(define-key global-map (kbd "C--") 'soup/decrease-font-size)
+
+(soup/reset-font-size)
+   #+end_src
+
+* UI Tools
+** =treemacs=
+   #+begin_src emacs-lisp
+(defun +treemacs--init ()
+  (require 'treemacs)
+  (let ((origin-buffer (current-buffer)))
+    ;; Toggle treemacs without prompting for the first project.
+    (cl-letf (((symbol-function 'treemacs-workspace->is-empty?)
+               (symbol-function 'ignore)))
+      (treemacs--init))
+    (unless (bound-and-true-p persp-mode)
+      (dolist (project (treemacs-workspace->projects (treemacs-current-workspace)))
+        (treemacs-do-remove-project-from-workspace project)))
+    (with-current-buffer origin-buffer
+      (let ((soup-project-root (or (soup-project-root) default-directory)))
+        (treemacs-do-add-project-to-workspace
+         (treemacs--canonical-path project-root)
+         (project-name project-root)))
+      (setq treemacs--ready-to-follow t)
+      (when (or treemacs-follow-after-init treemacs-follow-mode)
+        (treemacs--follow)))))
+
+(defun +treemacs/toggle ()
+    "initialize or toggle treemacs"
+    (interactive)
+    (require 'treemacs)
+    (pcase (treemacs-current-visibility)
+	(`visible (delete-window (treemacs-get-local-window)))
+	(_ (+treemacs--init))))
+
+(use-package treemacs
+    :defer t
+    :init
+    (setq treemacs-follow-after-init t
+          treemacs-is-never-other-window nil
+          treemacs-sorting 'alphabetic-case-insensitive-asc
+          treemacs-persist-file (expand-file-name "~/.cache/treemacs-persist")
+          treemacs-last-error-persist-file (expand-file-name "~/.cache/treemacs-last-error-persist")
+          treemacs-no-png-images t)
+    :config
+    (after! ace-window
+           (delq! 'treemacs-mode aw-ignored-buffers))
+    (treemacs-follow-mode -1)
+    (treemacs-git-mode +treemacs-git-mode)
+    (setq treemacs-collapse-dirs 3))
+
+(use-package treemacs-evil
+    :after treemacs
+    :config
+    (define-key! evil-treemacs-state-map
+        [return] #'treemacs-RET-action
+        [tab] #'treemacs-TAB-action
+        "TAB" #'treemacs-TAB-action
+        "o v" #'treemacs-visit-node-horizontal-split
+        "o g" #'treemacs-visit-node-vertical-split))
+
+(use-package treemacs-projectile
+    :after treemacs)
+
+(use-package treemacs-magit
+    :after treemacs magit)
+
+(use-package treemacs-persp
+    :after treemacs
+    :config (treemacs-set-scope-type 'Perspectives))
+   #+end_src
+** =vterm=
+*** Installation
+   #+begin_src emacs-lisp
+(use-package vterm
+	     :ensure t
+             :commands vterm vterm-mode
+             :preface (setq vterm-install t)
+             :hook (vterm-mode . soup-mark-buffer-as-real-h)
+             :hook (vterm-mode . hide-mode-line-mode)
+             :config
+             (setq vterm-kill-buffer-on-exit t))
+   #+end_src
+
+*** Utility Functions
+Borrowed from soup emacs
+   #+begin_src emacs-lisp
+(defun +vterm/toggle (arg)
+"Toggles a terminal popup window at project root.
+If prefix ARG is non-nil, recreate vterm buffer in the current project's root."
+  (interactive "P")
+  (unless (fboundp 'module-load)
+    (user-error "Your build of Emacs lacks dynamic modules support and cannot load vterm"))
+  (let ((buffer-name
+         (format "*soup:vterm-popup:%s*"
+                 (if (bound-and-true-p persp-mode)
+                     (safe-persp-name (get-current-persp))
+                   "main")))
+        confirm-kill-processes
+        current-prefix-arg)
+    (when arg
+      (let ((buffer (get-buffer buffer-name))
+            (window (get-buffer-window buffer-name)))
+        (when (buffer-live-p buffer)
+          (kill-buffer buffer))
+        (when (window-live-p window)
+          (delete-window window))))
+    (if-let (win (get-buffer-window buffer-name))
+        (if (eq (selected-window) win)
+            (delete-window win)
+          (select-window win)
+          (when (bound-and-true-p evil-local-mode)
+            (evil-change-to-initial-state))
+          (goto-char (point-max)))
+      (setenv "PROOT" (or (soup-project-root) default-directory))
+      (let ((buffer (get-buffer-create buffer-name)))
+        (with-current-buffer buffer
+          (unless (eq major-mode 'vterm-mode)
+            (vterm-mode))
+          (+vterm--change-directory-if-remote))
+        (pop-to-buffer buffer)))))
+
+(defun +vterm/here (arg)
+  "Open a terminal buffer in the current window at project root.
+If prefix ARG is non-nil, cd into `default-directory' instead of project root."
+  (interactive "P")
+  (unless (fboundp 'module-load)
+    (user-error "Your build of Emacs lacks dynamic modules support and cannot load vterm"))
+  (require 'vterm)
+  ;; This hack forces vterm to redraw, fixing strange artefacting in the tty.
+  (save-window-excursion
+    (pop-to-buffer "*scratch*"))
+  (let* ((project-root (or (soup-project-root) default-directory))
+         (default-directory
+           (if arg
+               default-directory
+             project-root))
+         display-buffer-alist)
+    (setenv "PROOT" project-root)
+    (vterm)
+    (+vterm--change-directory-if-remote)))
+
+(defun +vterm--change-directory-if-remote ()
+  "When `default-directory` is remote, use the corresponding
+method to prepare vterm at the corresponding remote directory."
+  (when (and (featurep 'tramp)
+             (tramp-tramp-file-p default-directory))
+    (message "default-directory is %s" default-directory)
+    (with-parsed-tramp-file-name default-directory path
+      (let ((method (cadr (assoc `tramp-login-program
+                                 (assoc path-method tramp-methods)))))
+        (vterm-send-string
+         (concat method " "
+                 (when path-user (concat path-user "@")) path-host))
+        (vterm-send-return)
+        (vterm-send-string
+         (concat "cd " path-localname))
+        (vterm-send-return)))))
+
+
+(defvar +vterm--insert-point nil)
+
+;;;###autoload
+(defun +vterm-remember-insert-point-h ()
+  "Remember point when leaving insert mode."
+  (setq-local +vterm--insert-point (point)))
+
+;;;###autoload
+(defun +vterm-goto-insert-point-h ()
+  "Go to the point we were at when we left insert mode."
+  (when +vterm--insert-point
+    (goto-char +vterm--insert-point)
+    (setq-local +vterm--insert-point nil)))
+   #+end_src
+* Programming Modes
+** Global
+*** Formatting
+    Include format-all so we don't have to worry about which formatter to use.
+
+    #+begin_src emacs-lisp
+(use-package format-all)
+    #+end_src
+
+*** Highlighting
+    Highlight current line
+    #+begin_src emacs-lisp
+(global-hl-line-mode)
+    #+end_src
+
+    Highlight uncommmited code
+    #+begin_src emacs-lisp
+(use-package diff-hl
+    :config
+    (add-hook 'prog-mode-hook 'turn-on-diff-hl-mode)
+    (add-hook 'vc-dir-mode-hook 'turn-on-diff-hl-mode))
+    #+end_src
+
+*** Completion
+    #+begin_src emacs-lisp
+(use-package counsel
+    :config
+    (use-package flx)
+    (use-package smex)
+    (use-package counsel-projectile)
+    (setq ivy-use-virtual-buffers t
+	  ivy-count-format "(%d%d) "
+	  ivy-initial-inputs-alist nil
+	  ivy-re-builders-alist '((t . ivy--regex-fuzzy))))
+    #+end_src
+*** SubWord Mode
+    Enable subword-mode globally
+
+    #+begin_src emacs-lisp
+(use-package subword
+    :config (global-subword-mode 1))
+    #+end_src
+*** Completion
+#+begin_src emacs-lisp
+(use-package! company
+    :commands company-complete-common company-manual-begin company-grab-line
+    :after-call pre-command-hook after-find-file
+    :init
+    (setq company-minimum-prefix-length 2
+          company-tooltip-limit 14
+          company-dabbrev-downcase nil
+          company-dabbrev-ignore-case nil
+          company-dabbrev-code-other-buffers t
+          company-tooltip-align-annotations t
+          company-require-match 'never
+          company-backends '(company-capf)
+          company-frontends
+            '(company-pseudo-tooltip-frontend
+		company-echo-metadata-frontend))
+    '(not erc-mode message-mode help-mode gud-mode eshell-mode)
+    :config
+    (add-hook 'company-mode-hook #'evil-normalize-keymaps)
+    (add-hook 'evil-normal-state-entry-hook #'company-abort)
+    (add-hook 'after-change-major-mode-hook #'+company-init-backends-h 'append)
+    (global-company-mode +1))
+
+;; (use-package! company-tng
+;;     :after-call post-self-insert-hook
+;;     :config
+;;     (add-to-list 'company-frontends 'company-tng-frontend)
+;;     (define-key! company-active-map
+;;         "RET"    nil
+;;         [return] nil
+;;         "TAB"    #'company-select-next
+;;         [tab]    #'company-select-next
+;;         [backtab] #'company-select-previous))
+
+(use-package company-prescient
+    :hook (company-mode . company-prescient-mode)
+    :config
+    (setq prescient-save-file (expand-file-name "~/.cache/prescient-save.el"))
+    (prescient-persist-mode +1))
+
+(use-package company-box
+    :hook (company-mode . company-box-mode)
+    :config
+    (setq company-box-show-single-candidate t
+          company-backends-colors nil
+          company-box-max-candidates 50
+          company-box-icons-alist 'company-box-icons-all-the-icons
+          company-box-icons-functions
+          (cons #'+company-box-icons--elisp-fn
+              (delq 'company-box-icons--elisp
+                    company-box-icons-functions))
+        company-box-icons-all-the-icons
+        (let ((all-the-icons-scale-factor 0.8))
+          `((Unknown       . ,(all-the-icons-material "find_in_page"             :face 'all-the-icons-purple))
+            (Text          . ,(all-the-icons-material "text_fields"              :face 'all-the-icons-green))
+            (Method        . ,(all-the-icons-material "functions"                :face 'all-the-icons-red))
+            (Function      . ,(all-the-icons-material "functions"                :face 'all-the-icons-red))
+            (Constructor   . ,(all-the-icons-material "functions"                :face 'all-the-icons-red))
+            (Field         . ,(all-the-icons-material "functions"                :face 'all-the-icons-red))
+            (Variable      . ,(all-the-icons-material "adjust"                   :face 'all-the-icons-blue))
+            (Class         . ,(all-the-icons-material "class"                    :face 'all-the-icons-red))
+            (Interface     . ,(all-the-icons-material "settings_input_component" :face 'all-the-icons-red))
+            (Module        . ,(all-the-icons-material "view_module"              :face 'all-the-icons-red))
+            (Property      . ,(all-the-icons-material "settings"                 :face 'all-the-icons-red))
+            (Unit          . ,(all-the-icons-material "straighten"               :face 'all-the-icons-red))
+            (Value         . ,(all-the-icons-material "filter_1"                 :face 'all-the-icons-red))
+            (Enum          . ,(all-the-icons-material "plus_one"                 :face 'all-the-icons-red))
+            (Keyword       . ,(all-the-icons-material "filter_center_focus"      :face 'all-the-icons-red))
+            (Snippet       . ,(all-the-icons-material "short_text"               :face 'all-the-icons-red))
+            (Color         . ,(all-the-icons-material "color_lens"               :face 'all-the-icons-red))
+            (File          . ,(all-the-icons-material "insert_drive_file"        :face 'all-the-icons-red))
+            (Reference     . ,(all-the-icons-material "collections_bookmark"     :face 'all-the-icons-red))
+            (Folder        . ,(all-the-icons-material "folder"                   :face 'all-the-icons-red))
+            (EnumMember    . ,(all-the-icons-material "people"                   :face 'all-the-icons-red))
+            (Constant      . ,(all-the-icons-material "pause_circle_filled"      :face 'all-the-icons-red))
+            (Struct        . ,(all-the-icons-material "streetview"               :face 'all-the-icons-red))
+            (Event         . ,(all-the-icons-material "event"                    :face 'all-the-icons-red))
+            (Operator      . ,(all-the-icons-material "control_point"            :face 'all-the-icons-red))
+            (TypeParameter . ,(all-the-icons-material "class"                    :face 'all-the-icons-red))
+            (Template      . ,(all-the-icons-material "short_text"               :face 'all-the-icons-green))
+            (ElispFunction . ,(all-the-icons-material "functions"                :face 'all-the-icons-red))
+            (ElispVariable . ,(all-the-icons-material "check_circle"             :face 'all-the-icons-blue))
+            (ElispFeature  . ,(all-the-icons-material "stars"                    :face 'all-the-icons-orange))
+            (ElispFace     . ,(all-the-icons-material "format_paint"             :face 'all-the-icons-pink))))))
+
+(use-package company-dict
+    :defer t
+    :config
+    (setq company-dict-dir (expand-file-name "~/.cache/dictionary")))
+
+#+end_src
+*** LSP
+#+begin_src emacs-lisp
+(defvar +lsp-defer-shutdown 3)
+(use-package lsp-mode
+    :commands lsp-install-server
+    :init
+    (setq lsp-session-file (expand-file-name "~/.cache/lsp-session")
+          lsp-auto-guess-root t
+          lsp-keep-workspace-alive t
+          lsp-flycheck-live-reporting t
+          lsp-server-install-dir (expand-file-name "~/.cache/lsp-servers")
+          lsp-enable-folding t
+          lsp-enable-links t
+          lsp-enable-file-watchers t
+          lsp-enable-text-document-color t
+          lsp-enable-semantic-highlighting t
+          lsp-enable-indentation t
+          lsp-enable-on-type-formatting t
+          lsp-prefer-capf t)
+    :config
+    ;; (push lsp-client-packages lsp-typescript)
+    ;; (push lsp-client-packages lsp-javascript-typescript)
+    ;; (mapc (lambda (package) (require package nil t)) lsp-client-packages)
+    (require 'lsp-clients)
+    (add-hook 'prog-mode-hook (lambda ()
+        (lsp))))
+(use-package lsp-ui
+  :hook (lsp-mode . lsp-ui-mode)
+  :config
+  (setq lsp-ui-doc-max-height 8
+        lsp-ui-doc-max-width 35
+        lsp-ui-sideline-ignore-duplicate t
+        ;; lsp-ui-doc is redundant with and more invasive than
+        ;; `+lookup/documentation'
+        lsp-ui-doc-enable nil
+        ;; Don't show symbol definitions in the sideline. They are pretty noisy,
+        ;; and there is a bug preventing Flycheck errors from being shown (the
+        ;; errors flash briefly and then disappear).
+        lsp-ui-sideline-show-hover nil))
+
+;;  (set-lookup-handlers! 'lsp-ui-mode :async t
+;;      :definition 'lsp-ui-peek-find-definitions
+;;      :references 'lsp-ui-peek-find-references))
+(use-package lsp-ivy
+    :commands lsp-ivy-workspace-symbol lsp-ivy-global-workspace-symbol)
+#+end_src
+** Lisps
+   #+begin_src emacs-lisp
+(use-package paredit)
+(use-package rainbow-delimiters)
+   #+end_src
+
+   #+begin_src emacs-lisp
+(setq lispy-mode-hooks
+      '(clojure-mode-hook
+	emacs-lisp-mode-hook
+	lisp-mode-hook
+	scheme-mode-hook))
+
+(dolist (hook lispy-mode-hooks)
+  (add-hook hook (lambda ()
+		   (setq show-paren-style 'expression)
+		   (paredit-mode)
+		   (rainbow-delimiters-mode))))
+   #+end_src
+
+   Include eldoc
+   #+begin_src emacs-lisp
+(use-package eldoc
+    :config
+    (add-hook 'emacs-lisp-mode-hook 'eldoc-mode))
+   #+end_src
+
+   Use flycheck
+   #+begin_src emacs-lisp
+(use-package flycheck-package)
+(eval-after-load 'flycheck '(flycheck-package-setup))
+   #+end_src
+
+** Javascript
+   typescript-mode
+
+#+begin_src emacs-lisp
+(use-package typescript-mode
+    :ensure t)
+#+end_src
+
+tide
+#+begin_src emacs-lisp
+(require 'json)
+(use-package tide
+  :ensure t
+  :after (typescript-mode company flycheck)
+  :hook ((typescript-mode . tide-setup)
+         (typescript-mode . tide-hl-identifier-mode)
+         (before-save . tide-format-before-save))
+  :config
+  (flycheck-mode +1)
+  (setq flycheck-check-syntax-automatically '(save-mode-enabled))
+  (eldoc-mode +1)
+  (tide-hl-identifier-mode +1)
+  (company-mode +1))
+
+(add-hook 'before-save-hook 'tide-format-before-save)
+#+end_src
+
+Colorize Compilation
+
+#+begin_src emacs-lisp
+(require 'ansi-color)
+(defun colorize-compilation-buffer ()
+  (toggle-read-only)
+  (ansi-color-apply-on-region compilation-filter-start (point))
+  (toggle-read-only))
+(add-hook 'compilation-filter-hook 'colorize-compilation-buffer)
+#+end_src
+* Project Management
+** Search
+*** ag
+
+    #+begin_src emacs-lisp
+(use-package ag)
+    #+end_src
+
+*** projectile
+
+    Use projectile... everywhere
+
+    #+begin_src emacs-lisp
+(use-package projectile
+    :config
+    (setq projectile-completion-system 'ivy
+	  ; projectile-switch-project-action 'projectile-dired
+	  projectile-require-project-root nil
+	  projectile-project-search-path '("~/projects/work" "~/projects/personal"))
+    (projectile-global-mode))
+    #+end_src
+
+** Syntax checking
+*** flycheck
+
+    #+begin_src emacs-lisp
+(use-package let-alist)
+(use-package flycheck)
+    #+end_src
+
+** Source Control
+** Keybinds
+#+begin_src emacs-lisp
+(define-prefix-command 'project-map)
+(general-create-definer project-define :keymaps 'project-map)
+
+(project-define "!" 'projectile-run-shell-command-in-root
+                "a" 'projectile-add-known-project
+                "b" 'projectile-switch-to-buffer
+                "c" 'projectile-compile-project
+                "C" 'projectile-repeat-last-command
+                "d" 'projectile-remove-known-project
+                "e" 'projectile-edit-dir-locals
+                "f" 'projectile-find-file
+                "g" 'projectile-configure-project
+                "I" 'projectile-invalidate-cache
+                "k" 'projectile-kill-buffers
+                "o" 'projectile-find-other-file
+                "p" 'counsel-projectile-switch-project
+                "r" 'projectile-recentf
+                "R" 'projectile-run-project
+                "s" 'projectile-save-project-buffers
+                "t" 'magit-todos-list
+                "T" 'projectile-test-project
+                "x" 'soup/open-project-scratch-buffer
+                "X" 'soup/switch-to-project-scratch-buffer)
+(leader-define "p" project-map)
+#+end_src
+*** magit
+    Let's use magit to handle version control.
+
+    #+begin_src emacs-lisp
+
+(defun reset-projectile-cache (&rest _)
+	(projectile-invalidate-cache nil)
+	(+magit-mark-stale-buffers-h))
+(use-package magit
+    :init
+    (setq magit-auto-revert-mode nil)  ; we do this ourselves further down
+    :config
+    (use-package magit-gitflow)
+    (use-package magit-todos)
+    (use-package evil-magit)
+    (setq transient-default-level 5
+	    magit-revision-show-gravatars '("^Author:     " . "^Commit:     ")
+	    magit-diff-refine-hunk t ; show granular diffs in selected hunk
+	    magit-save-repository-buffers nil)
+    (advice-add '+magit-revert-repo-buffers-deferred-a :after #'reset-projectile-cache)
+    (defvar +magit--pos nil)
+    (advice-add 'magit-pre-refresh-hook
+        :after
+	#'(defun +magit--set-window-state-h ()
+	(setq-local +magit--pos (list (current-buffer) (point) (window-start)))))
+    (advice-add 'magit-post-refresh-hook
+        :after
+	#'(defun +magit--restore-window-state-h ()
+	(when (and +magit--pos (eq (current-buffer) (car +magit--pos)))
+	    (goto-char (cadr +magit--pos))
+	    (set-window-start nil (caddr +magit--pos) t)
+	    (kill-local-variable '+magit--pos))))
+    (setq transient-display-buffer-action '(display-buffer-below-selected))
+    ; (set-popup-rule! "^\\(?:\\*magit\\|magit:\\| \\*transient\\*\\)" :ignore t)
+    (add-hook 'magit-popup-mode-hook #'hide-mode-line-mode)
+    (transient-append-suffix 'magit-fetch "-p"
+	'("-t" "Fetch all tags" ("-t" "--tags")))
+    (transient-append-suffix 'magit-pull "-r"
+	'("-a" "Autostash" "--autostash"))
+    (define-key magit-status-mode-map [remap magit-mode-bury-buffer] #'+magit/quit)
+    (define-key transient-map [escape] #'transient-quit-one)
+    (use-package evil-magit)
+    (use-package with-editor)
+    (setq magit-push-always-verify nil
+	  git-commit-summar-max-length 50)
+    (with-eval-after-load 'magit-remote
+	(magit-define-popup-action 'magit-push-popup ?P
+	    'magit-push-implicitly--desc
+	    'magit-push-implicitly ?p t))
+    (add-hook 'with-editor-mode-hook 'evil-insert-state))
+
+
+(define-prefix-command 'git-map)
+(define-prefix-command 'git-file-map)
+(define-prefix-command 'git-create-map)
+(general-create-definer git-define
+    :keymaps 'git-map)
+(general-create-definer git-file-define
+    :keymaps 'git-file-map)
+(general-create-definer git-create-define
+    :keymaps 'git-create-map)
+
+(git-define "/" 'magit-dispatch
+            "b" 'magit-branch-checkout
+            "g" 'magit-status
+            "s" 'magit-stage-hunk
+            "D" 'magit-file-delete
+            "B" 'magit-blame-addition
+            "C" 'magit-clone
+            "F" 'magit-fetch
+            "L" 'magit-log
+            "S" 'magit-stage-file
+            "U" 'magit-unstage-file
+            "%" 'magit-gitflow-popup)
+(git-file-define "f" 'magit-find-file
+                 "g" 'magit-find-git-config-file
+                 "c" 'magit-show-commit)
+(git-create-define "r" 'magit-init
+                   "R" 'magit-clone
+                   "c" 'magit-commit-create
+                   "f" 'magit-commit-fixup
+                   "b" 'magit-branch-and-checkout)
+
+(git-define "c" 'git-create-map
+            "f" 'git-file-map)
+(leader-define "g" git-map)
+    #+end_src
+
+* General Editing
+** Jump to Emacs configuration
+   #+begin_src emacs-lisp
+(defun soup/visit-emacs-config ()
+    (interactive)
+    (find-file "~/.emacs.d/configuration.org"))
+(leader-define "e" 'soup/visit-emacs-config)
+   #+end_src
+** =which-key=
+   #+begin_src emacs-lisp
+(use-package which-key
+    :config (which-key-mode))
+   #+end_src
+** Save cursor location
+   #+begin_src emacs-lisp
+(save-place-mode t)
+   #+end_src
+** Indent with spaces
+   #+begin_src emacs-lisp
+(setq-default indent-tabs-mode nil)
+   #+end_src
+** Workspaces
+*** persp-mode
+#+begin_src emacs-lisp
+(defun +workspaces-associate-frame-fn (frame &optional _new-frame-p)
+  "Create a blank, new perspective and associate it with FRAME."
+  (when persp-mode
+    (if (not (persp-frame-list-without-daemon))
+        (+workspace-switch +workspaces-main t)
+      (with-selected-frame frame
+        (+workspace-switch (format "#%s" (+workspace--generate-id)) t)
+        (unless (soup-real-buffer-p (current-buffer))
+          (switch-to-buffer (soup-fallback-buffer)))
+        (set-frame-parameter frame 'workspace (+workspace-current-name))
+        ;; ensure every buffer has a buffer-predicate
+        (persp-set-frame-buffer-predicate frame))
+      (run-at-time 0.1 nil #'+workspace/display))))
+
+(defun +workspace/display ()
+  "Display a list of workspaces (like tabs) in the echo area."
+  (interactive)
+  (let (message-log-max)
+    (message "%s" (+workspace--tabline))))
+
+(use-package persp-mode
+    :commands persp-switch-to-buffer
+    :init
+    (delq! 'buffer-predicate default-frame-alist 'assq)
+    (require 'persp-mode)
+    (persp-mode +1)
+    :config
+    (setq persp-autokill-buffer-on-remove 'kill-weak
+          persp-reset-windows-on-nil-window-conf nil
+          persp-nil-hidden t
+          persp-auto-save-fname "autosave"
+          persp-save-dir (expand-file-name "~/.emacs.d/workspaces")
+          persp-set-last-persp-for-new-frames t
+          persp-switch-to-added-buffer nil
+          persp-remove-buffers-from-nil-persp-behaviour nil
+          persp-auto-resume-time -1
+          persp-auto-save-opt (if noninteractive 0 1)
+          persp-init-frame-behaviour t
+          persp-init-new-frame-behaviour-override nil
+          persp-interactive-init-frame-behaviour-override #'workspaces-associate-frame-fn
+          persp-emacsclient-init-frame-behaviour-override #'workspaces-associate-frame-fn))
+#+end_src
+
+*** projectile integration
+#+begin_src emacs-lisp
+(defvar +workspaces--project-dir nil)
+(defvar +workspaces-switch-project-function #'projectile-find-file
+  "The function to run after `projectile-switch-project' or
+`counsel-projectile-switch-project'. This function must take one argument: the
+new project directory.")
+
+(defun +workspaces-set-project-action-fn ()
+  "A `projectile-switch-project-action' that sets the project directory for
+`+workspaces-switch-to-project-h'."
+  (setq +workspaces--project-dir default-directory))
+
+(defun +workspaces-switch-to-project-h (&optional dir)
+  "Creates a workspace dedicated to a new project. If one already exists, switch
+to it. If in the main workspace and it's empty, recycle that workspace, without
+renaming it.
+Afterwords, runs `+workspaces-switch-project-function'. By default, this prompts
+the user to open a file in the new project.
+This be hooked to `projectile-after-switch-project-hook'."
+  (when dir
+    (setq +workspaces--project-dir dir))
+  (when (and persp-mode +workspaces--project-dir)
+    (when projectile-before-switch-project-hook
+      (with-temp-buffer
+        ;; Load the project dir-local variables into the switch buffer, so the
+        ;; action can make use of them
+        (setq default-directory +workspaces--project-dir)
+        (hack-dir-local-variables-non-file-buffer)
+        (run-hooks 'projectile-before-switch-project-hook)))
+    (unwind-protect
+        (if (and (not (null +workspaces-on-switch-project-behavior))
+                 (or (eq +workspaces-on-switch-project-behavior t)
+                     (equal (safe-persp-name (get-current-persp)) persp-nil-name)
+                     (+workspace-buffer-list)))
+            (let* ((persp
+                    (let ((project-name (soup-project-name +workspaces--project-dir)))
+                      (or (+workspace-get project-name t)
+                          (+workspace-new project-name))))
+                   (new-name (persp-name persp)))
+              (+workspace-switch new-name)
+              (with-current-buffer (soup-fallback-buffer)
+                (setq default-directory +workspaces--project-dir))
+              (unless current-prefix-arg
+                (funcall +workspaces-switch-project-function +workspaces--project-dir))
+              (+workspace-message
+               (format "Switched to '%s' in new workspace" new-name)
+               'success))
+          (with-current-buffer (soup-fallback-buffer)
+            (setq default-directory +workspaces--project-dir)
+            (hack-dir-local-variables-non-file-buffer)
+            (message "Switched to '%s'" (soup-project-name +workspaces--project-dir)))
+          (with-demoted-errors "Workspace error: %s"
+            (+workspace-rename (+workspace-current-name) (soup-project-name +workspaces--project-dir)))
+          (unless current-prefix-arg
+            (funcall +workspaces-switch-project-function +workspaces--project-dir)))
+      (run-hooks 'projectile-after-switch-project-hook)
+      (setq +workspaces--project-dir nil))))
+
+(setq projectile-switch-project-action #'+workspaces-set-project-action-fn
+      counsel-projectile-switch-to-project-action
+      '(1 ("o" +workspaces-switch-to-project-h "open project in new workspace")
+            ("O" counsel-projectile-switch-project-action "jump to a project buffer or file")
+            ("f" counsel-projectile-switch-project-action-find-file "jump to a project file")
+            ("d" counsel-projectile-switch-project-action-find-dir "jump to a project directory")
+            ("b" counsel-projectile-switch-project-action-switch-to-buffer "jump to a project buffer")
+            ("m" counsel-projectile-switch-project-action-find-file-manually "find file manually from project root")
+            ("w" counsel-projectile-switch-project-action-save-all-buffers "save all project buffers")
+            ("k" counsel-projectile-switch-project-action-kill-buffers "kill all project buffers")
+            ("r" counsel-projectile-switch-project-action-remove-known-project "remove project from known projects")
+            ("c" counsel-projectile-switch-project-action-compile "run project compilation command")
+            ("C" counsel-projectile-switch-project-action-configure "run project configure command")
+            ("e" counsel-projectile-switch-project-action-edit-dir-locals "edit project dir-locals")
+            ("v" counsel-projectile-switch-project-action-vc "open project in vc-dir / magit / monky")
+            ("s" (lambda (project)
+                   (let ((projectile-switch-project-action
+                          (lambda () (call-interactively #'+ivy/project-search))))
+                     (counsel-projectile-switch-project-by-name project))) "search project")
+            ("xs" counsel-projectile-switch-project-action-run-shell "invoke shell from project root")
+            ("xe" counsel-projectile-switch-project-action-run-eshell "invoke eshell from project root")
+            ("xt" counsel-projectile-switch-project-action-run-term "invoke term from project root")
+            ("X" counsel-projectile-switch-project-action-org-capture "org-capture into project")))
+#+end_src
+* Navigation
+
+Define some keys for navigating by =<leader>o=.
+
+#+begin_src emacs-lisp
+(define-prefix-command 'open-map)
+(general-create-definer open-define :keymaps 'open-map)
+
+(define-prefix-command 'org-map)
+(general-create-definer org-define :keymaps 'org-map)
+
+(open-define "A" 'org-agenda
+             "a" 'org-map
+             "f" '+treemacs/toggle
+             "p" 'projectile-switch-project
+             "t" '+vterm/toggle
+             "T" '+vterm/here)
+(org-define "t" 'org-todo-list
+            "m" 'org-tags-view
+            "v" 'org-search-view)
+
+(leader-define "o" 'open-map)
+#+end_src
+
+Include switch-window for selecting windows
+#+begin_src emacs-lisp
+(use-package switch-window
+    :defer t
+    :init
+    (global-set-key [remap other-window] #'switch-window)
+    :config
+    (setq switch-window-shortcut-style 'qwerty
+          switch-window-qwerty-shortcuts '("a" "s" "d" "f" "g" "h" "j" "k" "l")))
+(windmove-default-keybindings 'control)
+#+end_src
+
+Dumb jump
+#+begin_src emacs-lisp
+(use-package dumb-jump
+  :commands dumb-jump-result-follow
+  :config
+  (setq dumb-jump-default-project soup-emacs-dir
+        dumb-jump-prefer-searcher 'rg
+        dumb-jump-aggressive nil
+        dumb-jump-selector
+        (cond ((featurep :completion ivy)  'ivy)
+              ((featurep :completion helm) 'helm)
+              ('popup)))
+  (add-hook 'dumb-jump-after-jump-hook #'better-jumper-set-jump))
+#+end_src
