@@ -19,12 +19,13 @@
 ;;
 ;; They all accept either a font-spec, font string ("Input Mono-12"), or xlfd
 ;; font string. You generally only need these two:
-(setq doom-font (font-spec :family "Hack" :size 12))
+(setq doom-font (font-spec :family "Hack Nerd Font" :size 12))
 
 ;; There are two ways to load a theme. Both assume the theme is installed and
 ;; available. You can either set `doom-theme' or manually load a theme with the
 ;; `load-theme' function. This is the default:
 (setq doom-theme 'kaolin-ocean)
+(setq doom-leader-key ",")
 
 ;; If you use `org' and don't want your org files in the default location below,
 ;; change `org-directory'. It must be set before org loads!
@@ -107,6 +108,10 @@
 (dap-tooltip-mode 1)
 (tooltip-mode 1)
 (dap-ui-controls-mode 1)
+(setq lsp-semantic-highlighting :immedidate
+      lsp-ui-sideline-show-diagnostics t
+      lsp-ui-sideline-show-hover t
+      lsp-ui-sideline-show-code-actions t)
 
 ;; (require 'exwm)
 ;; (require 'exwm-randr)
