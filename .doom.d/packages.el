@@ -54,3 +54,4 @@
 (package! op-typescript)
 (package! buffer-expose)
 (package! eldoc-overlay)
+(package! company-quickhelp)

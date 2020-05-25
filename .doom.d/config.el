@@ -24,7 +24,7 @@
 ;; There are two ways to load a theme. Both assume the theme is installed and
 ;; available. You can either set `doom-theme' or manually load a theme with the
 ;; `load-theme' function. This is the default:
-(setq doom-theme 'kaolin-ocean)
+(setq doom-theme 'doom-material)
 (setq doom-leader-key ",")
 
 ;; If you use `org' and don't want your org files in the default location below,
@@ -81,6 +81,8 @@
 (require 'org-jira)
 (jiralib-login "zhueras@amdtelemedicine.com" "ZVUhQQExEoyNfuYgIBItE060")
 
+(company-quickhelp-mode)
+
 ;; (define-key evil-normal-state-map ";" nil)
 ;; (define-key org-jira-map (kbd ";pg") 'org-jira-get-projects)
 ;; (define-key org-jira-map (kbd ";ib") 'org-jira-browse-issue)
@@ -112,6 +114,9 @@
       lsp-ui-sideline-show-diagnostics t
       lsp-ui-sideline-show-hover t
       lsp-ui-sideline-show-code-actions t)
+
+(custom-set-faces
+ '(minimap-active-region-background ((t (:background "#212b30")))))
 
 ;; (require 'exwm)
 ;; (require 'exwm-randr)
